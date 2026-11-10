@@ -1,0 +1,262 @@
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Savate:ital,wght@0,400..900;1,400..900&family=Plus+Jakarta+Sans:ital,wght@0,300..800;1,300..800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /*
+   * Paleta de Alto Impacto para Rescate de Alimentos:
+   *  - background / card ......... blanco puro
+   *  - foreground ................ verde oliva muy oscuro (títulos)
+   *  - primary / forest .......... verde ecológico vibrante
+   *  - secondary ................. verde menta suave
+   *  - accent / clay ............. naranja cálido (urgencia / ahorro)
+   *  - sage ...................... menta pastel para píldoras/chips
+   */
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 150 25% 15%;
+    --card: 0 0% 100%;
+    --card-foreground: 150 25% 15%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 150 25% 15%;
+    
+    --primary: 142 71% 35%;
+    --primary-foreground: 0 0% 100%;
+    
+    --secondary: 142 50% 92%;
+    --secondary-foreground: 142 60% 20%;
+    
+    --muted: 140 20% 96%;
+    --muted-foreground: 150 10% 40%;
+    
+    --accent: 24 95% 53%;
+    --accent-foreground: 0 0% 100%;
+    
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    
+    --border: 140 20% 90%;
+    --input: 140 20% 90%;
+    --ring: 142 71% 35%;
+    
+    --chart-1: 142 71% 35%;
+    --chart-2: 24 95% 53%;
+    --chart-3: 142 45% 55%;
+    --chart-4: 160 50% 62%;
+    --chart-5: 200 55% 55%;
+    
+    --radius: 1.4rem;
+    --forest: 142 71% 30%;
+    --ink: 150 30% 10%;
+    --ink-foreground: 0 0% 100%;
+    --sage: 142 45% 93%;
+    --sage-foreground: 142 60% 25%;
+    --clay: 24 90% 45%;
+    --cream: 0 0% 100%;
+    
+    --shadow-soft: 0 4px 20px -2px rgba(16, 185, 129, 0.08), 0 2px 6px -1px rgba(0, 0, 0, 0.04);
+    
+    --font-heading: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+    --font-body: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+    --font-display: 'Fraunces', Georgia, 'Times New Roman', serif;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+    --font-savate: 'Savate', sans-serif;
+
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 150 25% 15%;
+    --sidebar-primary: 142 71% 35%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 142 50% 92%;
+    --sidebar-accent-foreground: 150 25% 15%;
+    --sidebar-border: 140 20% 90%;
+    --sidebar-ring: 142 71% 35%;
+  }
+
+  .dark {
+    --background: 160 28% 7%;
+    --foreground: 42 40% 95%;
+    --card: 158 24% 11%;
+    --card-foreground: 42 40% 95%;
+    --popover: 158 24% 11%;
+    --popover-foreground: 42 40% 95%;
+    --primary: 148 42% 62%;
+    --primary-foreground: 160 40% 8%;
+    --secondary: 158 20% 16%;
+    --secondary-foreground: 42 40% 95%;
+    --muted: 158 20% 16%;
+    --muted-foreground: 42 14% 70%;
+    --accent: 24 90% 60%;
+    --accent-foreground: 24 60% 10%;
+    --destructive: 0 62% 48%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 158 18% 20%;
+    --input: 158 18% 20%;
+    --ring: 148 42% 62%;
+    --forest: 148 42% 62%;
+    --ink: 160 40% 5%;
+    --ink-foreground: 42 45% 95%;
+    --sage: 158 20% 16%;
+    --sage-foreground: 42 35% 90%;
+    --clay: 24 70% 55%;
+    --cream: 160 28% 7%;
+    --sidebar-background: 160 28% 7%;
+    --sidebar-foreground: 42 40% 95%;
+    --sidebar-primary: 148 42% 62%;
+    --sidebar-primary-foreground: 160 40% 8%;
+    --sidebar-accent: 158 20% 16%;
+    --sidebar-accent-foreground: 42 40% 95%;
+    --sidebar-border: 158 18% 20%;
+    --sidebar-ring: 148 42% 62%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground font-body antialiased;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  h1, h2, h3 {
+    @apply font-heading tracking-tight;
+  }
+
+  ::selection {
+    background: hsl(var(--primary) / 0.16);
+  }
+}
+
+@layer components {
+  .surface-card {
+    @apply rounded-[28px] bg-card ring-1 ring-border/60;
+    box-shadow: var(--shadow-soft);
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-full bg-primary px-6 text-[15px] font-semibold text-primary-foreground transition disabled:opacity-45;
+    box-shadow: 0 14px 28px -18px hsl(var(--primary) / 0.8);
+  }
+
+  .btn-soft {
+    @apply inline-flex items-center justify-center gap-2 rounded-full bg-secondary text-[14px] font-semibold text-secondary-foreground transition disabled:opacity-45;
+  }
+
+  .eyebrow {
+    @apply text-[11px] font-bold uppercase tracking-[0.18em] text-primary;
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: var(--font-display);
+    font-optical-sizing: auto;
+  }
+
+  .font-savate {
+    font-family: var(--font-savate);
+  }
+  
+  .press {
+    transition: transform 170ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 220ms ease, opacity 170ms ease;
+  }
+
+  .press:active {
+    transform: scale(0.972);
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .shimmer {
+    background-image: linear-gradient(
+      100deg,
+      hsl(var(--muted)) 10%,
+      hsl(var(--card) / 0.85) 38%,
+      hsl(var(--muted)) 62%
+    );
+    background-size: 240% 100%;
+    animation: shimmer 1.6s linear infinite;
+  }
+
+  .page-enter {
+    animation: fade-up 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .fade-up {
+    animation: fade-up 540ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .pop-in {
+    animation: pop-in 620ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .delay-1 { animation-delay: 50ms; }
+  .delay-2 { animation-delay: 100ms; }
+  .delay-3 { animation-delay: 150ms; }
+  .delay-4 { animation-delay: 200ms; }
+  .delay-5 { animation-delay: 260ms; }
+  .delay-6 { animation-delay: 320ms; }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pop-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes shimmer {
+  to {
+    background-position: -240% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-enter,
+  .fade-up,
+  .pop-in,
+  .rise-in,
+  .shimmer {
+    animation: none !important;
+  }
+}

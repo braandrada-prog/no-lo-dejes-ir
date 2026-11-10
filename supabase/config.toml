@@ -1,0 +1,6 @@
+   [functions.mpWebhook]
+   verify_jwt = false
+   [functions.mpReconcile]
+   verify_jwt = false
+   [functions.releaseExpiredOrders]
+   verify_jwt = false
