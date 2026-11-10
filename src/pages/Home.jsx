@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowRight, Bell, ChevronDown, Leaf, MapPin, Search, Sparkles, Sprout } from 'lucide-react';
 import { Geolocation } from '@capacitor/geolocation';
@@ -7,7 +7,6 @@ import CategoryRail from '../components/CategoryRail';
 import OfferCard from '../components/OfferCard';
 import HeroOffer from '../components/HeroOffer';
 import SectionHeading from '../components/SectionHeading';
-import Onboarding from '../components/Onboarding';
 import OfferCardSkeleton from '../components/feedback/OfferCardSkeleton';
 import EmptyState from '../components/feedback/EmptyState';
 import ErrorState from '../components/feedback/ErrorState';
@@ -19,7 +18,6 @@ import { useOffers } from '../hooks/useOffers';
 export default function Home() {
   const navigate = useNavigate();
   const [city, setCity] = useCity();
-  const [welcome, setWelcome] = useState(() => !localStorage.getItem('nlid_welcome'));
 
   // Solicitar permiso y obtener la ubicación real traducida a ciudad
   useEffect(() => {
@@ -83,17 +81,7 @@ export default function Home() {
 
   return (
     <div className="-mx-5 -mt-5 min-h-screen bg-gradient-to-b from-emerald-100/70 via-amber-100/40 to-slate-100 px-5 pt-5 pb-10">
-      {welcome && (
-        <Onboarding
-          city={city}
-          onDone={(picked) => {
-            setCity(picked);
-            localStorage.setItem('nlid_welcome', '1');
-            setWelcome(false);
-          }}
-        />
-      )}
-
+      
       {/* Header flotante */}
       <header className="sticky top-0 z-30 -mx-5 flex items-center justify-between gap-2 border-b border-border/40 bg-white/90 px-5 py-2.5 backdrop-blur-xl shadow-xs">
         <h1 className="shrink-0 font-heading font-savate text-[22px] font-semibold leading-[1.05] tracking-tight text-primary">
