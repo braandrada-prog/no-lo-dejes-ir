@@ -2,6 +2,7 @@ import { useEffect, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowRight, Bell, ChevronDown, Leaf, MapPin, Search, Sparkles, Sprout } from 'lucide-react';
 import { Geolocation } from '@capacitor/geolocation';
+import { supabase } from '../services/supabaseClient';
 
 import CategoryRail from '../components/CategoryRail';
 import OfferCard from '../components/OfferCard';
@@ -62,6 +63,24 @@ export default function Home() {
   }, [setCity]);
 
   const { offers, loading, error, reload } = useOffers({ city });
+
+  // Sincronización en tiempo real con Supabase Realtime
+  useEffect(() => {
+    const channel = supabase
+      .channel('realtime-offers')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'offers' },
+        () => {
+          reload();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [reload]);
 
   const featured = useMemo(
     () =>
