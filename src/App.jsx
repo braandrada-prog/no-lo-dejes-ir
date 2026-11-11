@@ -24,31 +24,54 @@ import { supabase } from './services/supabaseClient';
 // Admin se carga solo cuando se entra a /admin
 const Admin = lazy(() => import('./pages/Admin'));
 
-function App() {
-  // Listener para capturar el retorno nativo de Google OAuth en Capacitor
-  useEffect(() => {
-    const handleAppLaunch = CapApp.addListener('appUrlOpen', async (event) => {
-      const url = event.url;
-      if (url && url.includes('nolodejesir://callback')) {
-        const queryString = url.split('#')[1] || url.split('?')[1];
-        if (queryString) {
-          const urlParams = new URLSearchParams(queryString);
-          const accessToken = urlParams.get('access_token');
-          const refreshToken = urlParams.get('refresh_token');
+// Portal de Comerciantes (se carga solo cuando entra un comercio)
+const MerchantLogin = lazy(() => import('./pages/merchant/MerchantLogin'));
+const MerchantDashboard = lazy(() => import('./pages/merchant/MerchantDashboard'));
 
-          if (accessToken && refreshToken) {
-            await supabase.auth.setSession({
-              access_token: accessToken,
-              refresh_token: refreshToken,
-            });
-            window.location.href = '/';
+function App() {
+  // Listener seguro para capturar el retorno nativo de Google OAuth en Capacitor
+  useEffect(() => {
+    let cancelled = false;
+    let handle = null;
+
+    const setupListener = async () => {
+      const listener = await CapApp.addListener('appUrlOpen', async (event) => {
+        const url = event.url;
+        if (url && url.includes('nolodejesir://callback')) {
+          const queryString = url.split('#')[1] || url.split('?')[1];
+          if (queryString) {
+            const urlParams = new URLSearchParams(queryString);
+            const accessToken = urlParams.get('access_token');
+            const refreshToken = urlParams.get('refresh_token');
+
+            if (accessToken && refreshToken) {
+              const { error } = await supabase.auth.setSession({
+                access_token: accessToken,
+                refresh_token: refreshToken,
+              });
+              if (error) {
+                console.error('No se pudo iniciar la sesión con Google:', error);
+                window.location.href = '/login';
+                return;
+              }
+              window.location.href = '/';
+            }
           }
         }
-      }
-    });
+      });
+
+      // Si el componente se desmontó mientras se registraba, lo quitamos enseguida
+      if (cancelled) listener.remove();
+      else handle = listener;
+    };
+
+    setupListener().catch((error) =>
+      console.error('No se pudo registrar el listener de OAuth:', error)
+    );
 
     return () => {
-      handleAppLaunch.remove();
+      cancelled = true;
+      handle?.remove();
     };
   }, []);
 
@@ -56,11 +79,29 @@ function App() {
     <Router>
       <ScrollToTop />
       <Routes>
-        {/* Autenticación con Supabase */}
+        {/* Autenticación con Supabase (Consumidores) */}
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Login initialMode="register" />} />
         <Route path="/forgot-password" element={<Login initialMode="forgot" />} />
         <Route path="/reset-password" element={<ResetPassword />} />
+
+        {/* Portal Web exclusivo para Comerciantes (Sin la barra de navegación de la app móvil) */}
+        <Route
+          path="/comercio/login"
+          element={
+            <Suspense fallback={<div style={{ padding: 24 }}>Cargando portal...</div>}>
+              <MerchantLogin />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/comercio/dashboard"
+          element={
+            <Suspense fallback={<div style={{ padding: 24 }}>Cargando panel...</div>}>
+              <MerchantDashboard />
+            </Suspense>
+          }
+        />
 
         {/* App del consumidor, con barra de navegación inferior */}
         <Route element={<Layout />}>

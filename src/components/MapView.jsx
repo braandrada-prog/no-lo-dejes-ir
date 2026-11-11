@@ -63,7 +63,7 @@ export default function MapView({ offers = [], center, userPoint }) {
               <Link to={`/oferta/${offer.id}`} className="block text-xs text-foreground hover:underline">
                 <strong className="font-bold">{offer.title}</strong>
                 <br />
-                <span className="text-muted-foreground">{offer.business_name}</span>
+                <span className="text-muted-foreground">{offer.merchant_name || offer.business_name}</span>
                 <br />
                 <span className="font-semibold text-primary">{ars(offer.rescue_price)}</span>
               </Link>

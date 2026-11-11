@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { AlertCircle, Clock, Loader2, Lock, MapPin, ShieldCheck, Timer, XCircle } from 'lucide-react';
 
@@ -9,6 +9,13 @@ import { ars, pickupWindow, saving } from '../lib/format';
 
 import PageHeader from '../components/PageHeader';
 import SignInCard from '../components/SignInCard';
+
+// Genera una clave única por intento de compra (evita cobrar dos veces si se reintenta)
+function newIdempotencyKey() {
+  return typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
 
 export default function Checkout() {
   const { id } = useParams();
@@ -22,12 +29,10 @@ export default function Checkout() {
   const [cancelling, setCancelling] = useState(false);
   const [error, setError] = useState('');
   const [reservation, setReservation] = useState(null);
-  const [now, setNow] = useState(Date.now());
-  const idempotency = useRef(
-    typeof crypto !== 'undefined' && crypto.randomUUID
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(36).slice(2)}`
-  );
+  // Inicializadores perezosos: se ejecutan una sola vez al montar, no en cada render
+  const [now, setNow] = useState(() => Date.now());
+  // Clave de idempotencia fija durante toda la vida de esta pantalla de checkout
+  const [idempotencyKey] = useState(newIdempotencyKey);
 
   const quantity = Math.min(Math.max(Number(params.get('cantidad')) || 1, 1), 5);
 
@@ -35,11 +40,21 @@ export default function Checkout() {
     let alive = true;
 
     async function loadOffer() {
-      const { data, error: loadError } = await supabase
-        .from('offers')
+      let { data, error: loadError } = await supabase
+        .from('public_offers')
         .select('*')
         .eq('id', id)
         .maybeSingle();
+
+      // La vista oculta ofertas sin stock libre: si el usuario reservó la última unidad
+      // y recarga la página, igual tiene que poder ver su reserva.
+      if (!loadError && !data) {
+        ({ data, error: loadError } = await supabase
+          .from('offers')
+          .select('*')
+          .eq('id', id)
+          .maybeSingle());
+      }
 
       if (!alive) return;
       if (loadError) console.error('Error cargando la oferta:', loadError);
@@ -66,7 +81,7 @@ export default function Checkout() {
       const data = await callFunction('createCheckout', {
         offer_id: id,
         quantity,
-        idempotency_key: idempotency.current,
+        idempotency_key: idempotencyKey,
       });
       if (data?.init_point) {
         setReservation(data);
@@ -153,7 +168,7 @@ export default function Checkout() {
           />
           <div className="min-w-0 flex-1">
             <p className="truncate text-[10.5px] font-bold uppercase tracking-[0.14em] text-primary/80">
-              {offer.business_name}
+              {offer.merchant_name || offer.business_name}
             </p>
             <p className="mt-1 line-clamp-2 font-heading text-[14.5px] font-semibold leading-snug text-foreground">
               {offer.title}
@@ -167,11 +182,10 @@ export default function Checkout() {
         <div className="mt-4 space-y-2 border-t border-border/70 pt-3.5 text-[12.5px] text-muted-foreground">
           <p className="flex items-start gap-2">
             <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-primary/70" />
-            {offer.business_address}
+            {offer.merchant_address || offer.business_address}
           </p>
           <p className="flex items-start gap-2">
             <Clock className="mt-0.5 h-4 w-4 shrink-0 text-primary/70" />
-            {offer.pickup_date ? `${offer.pickup_date} · ` : ''}
             {pickupWindow(offer.pickup_start, offer.pickup_end)}
           </p>
         </div>

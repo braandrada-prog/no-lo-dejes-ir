@@ -13,6 +13,7 @@ import { useCities } from '../hooks/useCities';
 import { distanceKm } from '../lib/geo';
 import { pct } from '../lib/format';
 import { cn } from '../lib/utils';
+import { getCurrentCoords, reverseCity, normalize } from '../lib/location';
 
 const SORTS = [
   { value: 'distancia', label: 'Más cercanos' },
@@ -62,7 +63,7 @@ export default function Explore() {
       items = items.filter(
         (o) =>
           o.title?.toLowerCase().includes(q) ||
-          o.business_name?.toLowerCase().includes(q) ||
+          o.merchant_name?.toLowerCase().includes(q) ||
           o.category?.toLowerCase().includes(q)
       );
     }
@@ -83,19 +84,37 @@ export default function Explore() {
     return [...items].sort(sorters[sort] || sorters.distancia);
   }, [offers, text, sort, maxPrice, minDiscount, maxDistance, coords, center]);
 
-  const locate = () => {
+  const locate = async () => {
     setGeoError('');
-    if (!navigator.geolocation) {
-      setGeoError('Tu navegador no permite geolocalización.');
+
+    let point;
+    try {
+      point = await getCurrentCoords();
+    } catch {
+      setGeoError('No pudimos obtener tu ubicación. Podés elegir la ciudad manualmente.');
       return;
     }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-        setSort('distancia');
-      },
-      () => setGeoError('No pudimos obtener tu ubicación. Podés elegir la ciudad manualmente.')
-    );
+    setCoords(point);
+    setSort('distancia');
+
+    // Ya tenemos la ubicación: si falla detectar la ciudad, igual se ordena por cercanía
+    let detected;
+    try {
+      detected = await reverseCity(point);
+    } catch {
+      setGeoError('Ya ordenamos por cercanía, pero no pudimos detectar tu ciudad. Elegila de la lista.');
+      return;
+    }
+
+    const match = cities.find((c) => normalize(c.name) === normalize(detected));
+    if (match) {
+      setCity(match.name);
+      setParams({ categoria: category, ciudad: match.name });
+    } else if (detected) {
+      setGeoError(
+        `Estás en ${detected}, pero todavía no tenemos ofertas ahí. Elegí una ciudad de la lista.`
+      );
+    }
   };
 
   const activeFilters = [maxPrice, minDiscount, maxDistance].filter(Boolean).length;

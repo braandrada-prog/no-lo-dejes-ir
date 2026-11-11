@@ -59,9 +59,18 @@ export default function OfferCard({ offer, variant = 'row' }) {
       </div>
 
       <div className="p-4">
-        <p className="truncate text-[11px] font-bold uppercase tracking-[0.14em] text-primary/70">
-          {offer.business_name}
-        </p>
+        {/* Nombre del comercio y calificación */}
+        <div className="flex items-center justify-between">
+          <p className="truncate text-[11px] font-bold uppercase tracking-[0.14em] text-primary/70">
+            {offer.merchant_name || offer.business_name}
+          </p>
+          {Number(offer.rating) > 0 && (
+            <span className="text-[11px] font-bold text-yellow-600 flex items-center gap-0.5">
+              ★ {Number(offer.rating).toFixed(1)}
+            </span>
+          )}
+        </div>
+
         <h3 className="mt-1.5 line-clamp-2 font-heading text-[16px] font-semibold leading-[1.3] text-foreground">
           {offer.title}
         </h3>

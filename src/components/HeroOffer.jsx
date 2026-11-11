@@ -35,7 +35,7 @@ export default function HeroOffer({ offer }) {
       <div className="absolute inset-x-0 bottom-0 p-5">
         <div className="flex items-center gap-1.5 text-[12px] font-semibold text-primary-foreground/80">
           <MapPin className="h-3.5 w-3.5" />
-          {offer.business_name}
+          {offer.merchant_name || offer.business_name}
           <span className="text-primary-foreground/40">·</span>
           {pickupWindow(offer.pickup_start, offer.pickup_end)}
         </div>
