@@ -2,24 +2,33 @@ import { useCallback, useEffect, useState } from 'react';
 import { Pencil, Plus, Trash2, X } from 'lucide-react';
 
 import { supabase } from '../../services/supabaseClient';
-import { CATEGORIES, CITIES } from '../../lib/categories';
+import CitySelect from '../CitySelect';
 import { logAction } from '../../lib/audit';
 
+// Columnas reales de public.businesses que se editan desde el admin
 const EMPTY = {
   name: '',
-  category: 'Panaderías',
-  description: '',
+  email: '',
   address: '',
-  city: 'Salto',
-  phone: '',
-  image_url: '',
+  city: '',
   lat: '',
   lng: '',
   status: 'active',
 };
 
-// Solo se envían a Supabase las columnas del formulario (sin id, created_at, etc.)
+// Solo se envían a Supabase las columnas del formulario (sin id, owner_id, rating, etc.)
 const FIELDS = Object.keys(EMPTY);
+
+// Consulta pura (sin estado de React): se usa al montar y al recargar
+async function fetchBusinesses() {
+  const { data, error } = await supabase
+    .from('businesses')
+    .select('*')
+    .order('name', { ascending: true })
+    .limit(200);
+  if (error) console.error('Error cargando comercios:', error);
+  return { data: data ?? [], error };
+}
 
 export default function AdminBusinesses({ user }) {
   const [items, setItems] = useState([]);
@@ -27,24 +36,25 @@ export default function AdminBusinesses({ user }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
-  const load = useCallback(async () => {
-    const { data, error: loadError } = await supabase
-      .from('businesses')
-      .select('*')
-      .order('name', { ascending: true })
-      .limit(200);
-
+  const applyResult = useCallback(({ data, error: loadError }) => {
     if (loadError) {
-      console.error('Error cargando comercios:', loadError);
       setError('No pudimos cargar los comercios.');
       return;
     }
-    setItems(data ?? []);
+    setItems(data);
   }, []);
 
+  const load = useCallback(async () => applyResult(await fetchBusinesses()), [applyResult]);
+
   useEffect(() => {
-    load();
-  }, [load]);
+    let alive = true;
+    fetchBusinesses().then((result) => {
+      if (alive) applyResult(result);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [applyResult]);
 
   const save = async (event) => {
     event.preventDefault();
@@ -55,12 +65,15 @@ export default function AdminBusinesses({ user }) {
     FIELDS.forEach((key) => {
       payload[key] = form[key] ?? null;
     });
+    payload.email = form.email || null;
     payload.lat = form.lat !== '' && form.lat != null ? Number(form.lat) : null;
     payload.lng = form.lng !== '' && form.lng != null ? Number(form.lng) : null;
 
+    // Un comercio creado desde el admin no tiene dueño (owner_id vacío): nadie puede
+    // administrarlo desde el portal de comerciantes hasta que se le asigne uno.
     const result = form.id
       ? await supabase.from('businesses').update(payload).eq('id', form.id)
-      : await supabase.from('businesses').insert(payload);
+      : await supabase.from('businesses').insert({ id: crypto.randomUUID(), ...payload });
 
     if (result.error) {
       console.error('Error guardando el comercio:', result.error);
@@ -142,15 +155,16 @@ export default function AdminBusinesses({ user }) {
           </div>
           {[
             { key: 'name', label: 'Nombre', required: true },
+            { key: 'email', label: 'Email de contacto', type: 'email' },
             { key: 'address', label: 'Dirección', required: true },
-            { key: 'phone', label: 'Teléfono' },
-            { key: 'image_url', label: 'URL de foto' },
-            { key: 'lat', label: 'Latitud' },
-            { key: 'lng', label: 'Longitud' },
+            { key: 'lat', label: 'Latitud', type: 'number' },
+            { key: 'lng', label: 'Longitud', type: 'number' },
           ].map((field) => (
             <label key={field.key} className="text-[11px] font-medium text-muted-foreground">
               {field.label}
               <input
+                type={field.type || 'text'}
+                step={field.type === 'number' ? 'any' : undefined}
                 required={field.required}
                 value={form[field.key] ?? ''}
                 onChange={(event) => setForm({ ...form, [field.key]: event.target.value })}
@@ -159,36 +173,11 @@ export default function AdminBusinesses({ user }) {
             </label>
           ))}
           <label className="text-[11px] font-medium text-muted-foreground">
-            Categoría
-            <select
-              value={form.category}
-              onChange={(event) => setForm({ ...form, category: event.target.value })}
-              className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground outline-none"
-            >
-              {CATEGORIES.map((c) => (
-                <option key={c.name} value={c.name}>{c.name}</option>
-              ))}
-            </select>
-          </label>
-          <label className="text-[11px] font-medium text-muted-foreground">
             Ciudad
-            <select
+            <CitySelect
               value={form.city}
-              onChange={(event) => setForm({ ...form, city: event.target.value })}
+              onChange={(city) => setForm({ ...form, city })}
               className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground outline-none"
-            >
-              {CITIES.map((c) => (
-                <option key={c.name} value={c.name}>{c.name}</option>
-              ))}
-            </select>
-          </label>
-          <label className="text-[11px] font-medium text-muted-foreground sm:col-span-2">
-            Descripción
-            <textarea
-              value={form.description || ''}
-              onChange={(event) => setForm({ ...form, description: event.target.value })}
-              rows={2}
-              className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
             />
           </label>
           <div className="flex gap-2 sm:col-span-2">
@@ -209,7 +198,7 @@ export default function AdminBusinesses({ user }) {
             <tr>
               <th className="px-3 py-2.5">Comercio</th>
               <th className="px-3 py-2.5">Ciudad</th>
-              <th className="px-3 py-2.5">Categoría</th>
+              <th className="px-3 py-2.5">Calificación</th>
               <th className="px-3 py-2.5">Estado</th>
               <th className="px-3 py-2.5 text-right">Acciones</th>
             </tr>
@@ -220,9 +209,14 @@ export default function AdminBusinesses({ user }) {
                 <td className="px-3 py-2.5">
                   <p className="font-semibold text-foreground">{business.name}</p>
                   <p className="text-[10px] text-muted-foreground">{business.address}</p>
+                  {!business.owner_id && (
+                    <p className="text-[10px] text-amber-600">Sin dueño asignado</p>
+                  )}
                 </td>
                 <td className="px-3 py-2.5 text-muted-foreground">{business.city}</td>
-                <td className="px-3 py-2.5 text-muted-foreground">{business.category}</td>
+                <td className="px-3 py-2.5 text-muted-foreground">
+                  {Number(business.rating) > 0 ? `★ ${Number(business.rating).toFixed(1)}` : '—'}
+                </td>
                 <td className="px-3 py-2.5">
                   <span
                     className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
@@ -236,7 +230,12 @@ export default function AdminBusinesses({ user }) {
                 </td>
                 <td className="px-3 py-2.5">
                   <div className="flex items-center justify-end gap-1.5">
-                    <button type="button" onClick={() => setForm({ ...business })} title="Editar" aria-label="Editar">
+                    <button
+                      type="button"
+                      onClick={() => setForm({ ...business, lat: business.lat ?? '', lng: business.lng ?? '' })}
+                      title="Editar"
+                      aria-label="Editar"
+                    >
                       <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
                     </button>
                     <button

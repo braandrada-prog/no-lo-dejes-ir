@@ -31,6 +31,11 @@ export const categoryIcon = (name) =>
   CATEGORIES.find((c) => c.name === name)?.icon || Package;
 
 export const CITIES = [
-  { name: 'Salto', province: 'Buenos Aires', lat: -34.2969, lng: -60.2537 },
-  { name: 'Pergamino', province: 'Buenos Aires', lat: -33.89, lng: -60.5736 },
+  { name: 'Pergamino', lat: -33.8895, lng: -60.5736 },
+  { name: 'Salto', lat: -34.2886, lng: -60.2514 },
+  { name: 'Junín', lat: -34.5847, lng: -60.9458 },
+  { name: 'Arrecifes', lat: -34.0667, lng: -60.1081 },
+  { name: 'Rojas', lat: -34.1953, lng: -60.7367 },
+  { name: 'San Nicolás de los Arroyos', lat: -33.3345, lng: -60.2250 },
+  { name: 'Chacabuco', lat: -34.6400, lng: -60.4700 },
 ];

@@ -16,10 +16,14 @@ import { supabase } from '../services/supabaseClient';
 import { useSession } from '../hooks/useSession';
 import PriceTag from '../components/PriceTag';
 import EmptyState from '../components/feedback/EmptyState';
+import ErrorState from '../components/feedback/ErrorState';
 import { ars, distanceLabel, pickupWindow } from '../lib/format';
 import { distanceKm, mapsLink } from '../lib/geo';
 import { CITIES } from '../lib/categories';
 import { cn } from '../lib/utils';
+
+const FALLBACK_IMG =
+  'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=600&q=80';
 
 export default function OfferDetail() {
   const { id } = useParams();
@@ -27,6 +31,8 @@ export default function OfferDetail() {
   const { user } = useSession();
   const [offer, setOffer] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const [quantity, setQuantity] = useState(1);
   const [favorite, setFavorite] = useState(null);
 
@@ -34,10 +40,24 @@ export default function OfferDetail() {
     let alive = true;
 
     async function loadOffer() {
-      const { data, error } = await supabase.from('offers').select('*').eq('id', id).maybeSingle();
+      setLoading(true);
+      setLoadError(false);
+
+      const { data, error } = await supabase
+        .from('public_offers')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+
       if (!alive) return;
-      if (error) console.error('Error cargando la oferta:', error);
-      setOffer(error ? null : data);
+
+      if (error) {
+        console.error('Error cargando la oferta:', error);
+        setLoadError(true);
+        setOffer(null);
+      } else {
+        setOffer(data ? { ...data, image_url: data.image_url || FALLBACK_IMG } : null);
+      }
       setLoading(false);
     }
 
@@ -45,7 +65,7 @@ export default function OfferDetail() {
     return () => {
       alive = false;
     };
-  }, [id]);
+  }, [id, attempt]);
 
   useEffect(() => {
     if (!user || !id) return undefined;
@@ -91,7 +111,7 @@ export default function OfferDetail() {
         type: 'offer',
         offer_id: id,
         business_id: offer?.business_id || null,
-        business_name: offer?.business_name || '',
+        business_name: offer?.merchant_name || '',
       })
       .select()
       .single();
@@ -118,6 +138,17 @@ export default function OfferDetail() {
     );
   }
 
+  if (loadError) {
+    return (
+      <div className="pt-4">
+        <ErrorState
+          title="No pudimos cargar esta oferta"
+          onRetry={() => setAttempt((value) => value + 1)}
+        />
+      </div>
+    );
+  }
+
   if (!offer) {
     return (
       <div className="pt-4">
@@ -132,7 +163,10 @@ export default function OfferDetail() {
 
   const available = Number(offer.quantity_available) || 0;
   const total = Number(offer.rescue_price) * quantity;
-  const km = distanceKm(CITIES.find((city) => city.name === offer.city), offer);
+  const km = distanceKm(
+    CITIES.find((c) => c.name?.toLowerCase() === offer.city?.toLowerCase()),
+    offer
+  );
   const low = available > 0 && available <= 3;
 
   return (
@@ -175,15 +209,23 @@ export default function OfferDetail() {
       </div>
 
       <div className="px-5 pb-44 pt-5">
-        <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.14em] text-primary/80">
-          <BadgeCheck className="h-4 w-4" />
-          {offer.business_name}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.14em] text-primary/80">
+            <BadgeCheck className="h-4 w-4" />
+            {offer.merchant_name || 'Comercio local'}
+          </div>
+          {Number(offer.rating) > 0 && (
+            <span className="rounded-full bg-yellow-50 px-2 py-0.5 text-xs font-bold text-yellow-600">
+              ★ {Number(offer.rating).toFixed(1)}
+            </span>
+          )}
         </div>
+
         <h1 className="mt-2 font-display text-[30px] leading-[1.1] tracking-[-0.02em] text-foreground">
           {offer.title}
         </h1>
         <p className="mt-1.5 text-[12.5px] text-muted-foreground">
-          {offer.category} · {offer.city}
+          {offer.category || 'Pack Sorpresa'} · {offer.city}
         </p>
 
         <div className="mt-4">
@@ -217,58 +259,39 @@ export default function OfferDetail() {
         <section className="mt-6">
           <h2 className="font-heading text-[15px] font-bold text-foreground">Qué incluye</h2>
           <p className="mt-1.5 text-[13.5px] leading-relaxed text-muted-foreground">{offer.description}</p>
-          {offer.surprise && (
-            <div className="mt-3 flex gap-2.5 rounded-[20px] bg-accent/10 p-3.5 text-[12px] leading-relaxed text-clay ring-1 ring-accent/15">
-              <Info className="mt-0.5 h-4 w-4 shrink-0" />
-              Es una caja sorpresa: el contenido exacto varía según los excedentes del día. Todos los
-              productos son aptos para consumo y se entregan en el horario indicado.
-            </div>
-          )}
-        </section>
-
-        <section className="mt-5 space-y-2.5">
-          <a
-            href={mapsLink(offer.business_address)}
-            target="_blank"
-            rel="noreferrer"
-            className="press flex items-center gap-3 rounded-[22px] bg-card p-4 ring-1 ring-border/60"
-          >
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-sage text-forest">
-              <Navigation className="h-[18px] w-[18px]" />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block text-[10.5px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
-                Punto de retiro
-              </span>
-              <span className="mt-0.5 block truncate text-[13.5px] font-semibold text-foreground">
-                {offer.business_address}
-              </span>
-              <span className="mt-0.5 block text-[11.5px] text-muted-foreground">
-                {offer.pickup_date ? `${offer.pickup_date} · ` : ''}
-                {pickupWindow(offer.pickup_start, offer.pickup_end)}
-              </span>
-            </span>
-            <span className="text-[11.5px] font-bold text-primary">Mapa</span>
-          </a>
-
-          <div className="rounded-[22px] bg-card p-4 ring-1 ring-border/60">
-            <p className="text-[10.5px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
-              Conservación
-            </p>
-            <p className="mt-1 text-[13px] leading-relaxed text-foreground">
-              {offer.storage || 'Consultar en el comercio.'}
-            </p>
-          </div>
-
-          <div className="rounded-[22px] bg-card p-4 ring-1 ring-border/60">
-            <p className="text-[10.5px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
-              Alérgenos
-            </p>
-            <p className="mt-1 text-[13px] leading-relaxed text-foreground">
-              {offer.allergens || 'Sin información declarada.'}
-            </p>
+          <div className="mt-3 flex gap-2.5 rounded-[20px] bg-accent/10 p-3.5 text-[12px] leading-relaxed text-clay ring-1 ring-accent/15">
+            <Info className="mt-0.5 h-4 w-4 shrink-0" />
+            Es una caja sorpresa: el contenido exacto varía según los excedentes del día. Todos los
+            productos son aptos para consumo y se entregan en el horario indicado.
           </div>
         </section>
+
+        {offer.merchant_address && (
+          <section className="mt-5 space-y-2.5">
+            <a
+              href={mapsLink(offer.merchant_address)}
+              target="_blank"
+              rel="noreferrer"
+              className="press flex items-center gap-3 rounded-[22px] bg-card p-4 ring-1 ring-border/60"
+            >
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-sage text-forest">
+                <Navigation className="h-[18px] w-[18px]" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-[10.5px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+                  Punto de retiro
+                </span>
+                <span className="mt-0.5 block truncate text-[13.5px] font-semibold text-foreground">
+                  {offer.merchant_address}
+                </span>
+                <span className="mt-0.5 block text-[11.5px] text-muted-foreground">
+                  {pickupWindow(offer.pickup_start, offer.pickup_end)}
+                </span>
+              </span>
+              <span className="text-[11.5px] font-bold text-primary">Mapa</span>
+            </a>
+          </section>
+        )}
 
         <div className="mt-4 flex items-start gap-2 text-[11.5px] leading-relaxed text-muted-foreground">
           <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />

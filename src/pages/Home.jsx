@@ -54,7 +54,7 @@ export default function Home() {
           }
         }
       } catch (error) {
-        console.log("No se pudo obtener la ubicación automática:", error);
+        console.error("Home: no se pudo detectar la ciudad automáticamente (permiso denegado o GPS no disponible):", error);
       }
     };
 

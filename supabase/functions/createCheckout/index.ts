@@ -86,8 +86,11 @@ Deno.serve(async (req: Request) => {
     if (offer.status !== 'active') {
       return json({ error: 'La oferta ya no está disponible.', code: 'unavailable' }, 409);
     }
-    if (offer.expires_at && new Date(offer.expires_at).getTime() < Date.now()) {
-      return json({ error: 'La oferta venció.', code: 'expired' }, 409);
+    // Ya no se puede comprar si terminó el horario de retiro (offers.pickup_end es timestamptz).
+    // Se mantiene expires_at por compatibilidad con ofertas viejas que lo tengan.
+    const deadline = offer.pickup_end || offer.expires_at;
+    if (deadline && new Date(deadline).getTime() <= Date.now()) {
+      return json({ error: 'El horario de retiro de esta oferta ya terminó.', code: 'expired' }, 409);
     }
     if ((Number(offer.quantity_available) || 0) < quantity) {
       return json(
@@ -127,6 +130,17 @@ Deno.serve(async (req: Request) => {
       .eq('id', user.id)
       .maybeSingle();
 
+    // Los datos del comercio viven en `businesses` (offers solo guarda merchant_id)
+    // Si falla no se corta la venta: la orden queda sin nombre/dirección pero el pago sigue.
+    const { data: business, error: businessError } = offer.merchant_id
+      ? await svc
+          .from('businesses')
+          .select('id, name, address, city')
+          .eq('id', offer.merchant_id)
+          .maybeSingle()
+      : { data: null, error: null };
+    if (businessError) console.error('No se pudo leer el comercio de la oferta:', businessError);
+
     const unitPrice = Number(offer.rescue_price);
     const total = unitPrice * quantity;
     const savings = Math.max(Number(offer.original_price) - unitPrice, 0) * quantity;
@@ -143,13 +157,13 @@ Deno.serve(async (req: Request) => {
         offer_id: offer.id,
         offer_title: offer.title,
         image_url: offer.image_url || '',
-        business_id: offer.business_id || null,
+        business_id: business?.id || offer.merchant_id || null,
         merchant_id: offer.merchant_id || null,
         branch_id: offer.branch_id || null,
-        business_name: offer.business_name || '',
-        business_address: offer.business_address || '',
-        business_phone: offer.business_phone || '',
-        city: offer.city || '',
+        business_name: business?.name || '',
+        business_address: business?.address || '',
+        business_phone: '',
+        city: offer.city || business?.city || '',
         quantity,
         unit_price: unitPrice,
         total,

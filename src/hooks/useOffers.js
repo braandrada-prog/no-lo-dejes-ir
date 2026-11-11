@@ -3,11 +3,12 @@ import { supabase } from '../services/supabaseClient';
 import { CITIES } from '../lib/categories';
 import { distanceKm } from '../lib/geo';
 
-// Calcula la distancia (km) entre el centro de la ciudad y el comercio de la oferta.
-// Si la oferta ya trae distance_km, se respeta.
+const FALLBACK_IMG =
+  'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=600&q=80';
+
 function withDistance(offer) {
   if (offer.distance_km !== undefined && offer.distance_km !== null) return offer;
-  const center = CITIES.find((c) => c.name === offer.city);
+  const center = CITIES.find((c) => c.name?.toLowerCase() === offer.city?.toLowerCase());
   const km = distanceKm(center, offer);
   return km === null ? offer : { ...offer, distance_km: km };
 }
@@ -26,13 +27,12 @@ export function useOffers({ city, category } = {}) {
       setError(false);
 
       let query = supabase
-        .from('offers')
+        .from('public_offers')
         .select('*')
-        .eq('status', 'active')
         .order('created_at', { ascending: false })
         .limit(100);
 
-      if (city) query = query.eq('city', city);
+      if (city) query = query.ilike('city', city);
       if (category) query = query.eq('category', category);
 
       const { data, error: queryError } = await query;
@@ -43,7 +43,11 @@ export function useOffers({ city, category } = {}) {
         setOffers([]);
         setError(true);
       } else {
-        setOffers((data ?? []).map(withDistance));
+        setOffers(
+          (data ?? []).map((offer) =>
+            withDistance({ ...offer, image_url: offer.image_url || FALLBACK_IMG })
+          )
+        );
       }
       setLoading(false);
     }
