@@ -124,7 +124,8 @@ export async function releaseStock(
   const available = Number(current.quantity_available) || 0;
 
   if (current.status === 'sold_out' && available > 0) {
-    const stillValid = !current.expires_at || new Date(current.expires_at).getTime() > Date.now();
+    const deadline = current.pickup_end || current.expires_at;
+    const stillValid = !deadline || new Date(deadline).getTime() > Date.now();
     await svc.from('offers').update({ status: stillValid ? 'active' : 'expired' }).eq('id', offerId);
   }
 

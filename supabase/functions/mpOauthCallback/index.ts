@@ -1,4 +1,3 @@
-// deno-lint-ignore-file no-explicit-any
 import { adminClient, readSecret } from '../_shared/auth.ts';
 import { mpExchangeCode, resolveMpEnvironment } from '../_shared/mpConfig.ts';
 import { saveMerchantTokens } from '../_shared/merchantMp.ts';

@@ -1,4 +1,3 @@
-// deno-lint-ignore-file no-explicit-any
 import { corsHeaders, json } from '../_shared/cors.ts';
 import { adminClient, getAuthedUser, readSecret } from '../_shared/auth.ts';
 import { mpRefundPayment, resolveMpEnvironment } from '../_shared/mpConfig.ts';

@@ -5,7 +5,16 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  // Solo se analiza el código fuente: nada generado, nativo ni de Deno.
+  globalIgnores([
+    'dist',
+    'build',
+    'coverage',
+    'android',
+    'ios',
+    'supabase', // Edge Functions (Deno): se validan con `deno check` / `deno lint`
+    'mi-proyecto-supabase',
+  ]),
   {
     files: ['**/*.{js,jsx}'],
     extends: [
@@ -17,5 +26,10 @@ export default defineConfig([
       globals: globals.browser,
       parserOptions: { ecmaFeatures: { jsx: true } },
     },
+  },
+  // Archivos de configuración de herramientas: corren en Node, no en el navegador.
+  {
+    files: ['*.config.js'],
+    languageOptions: { globals: globals.node },
   },
 ])

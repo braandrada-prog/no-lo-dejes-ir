@@ -17,7 +17,7 @@ function toBase64(bytes: Uint8Array) {
   return btoa(binary);
 }
 
-function fromBase64(value: string) {
+function fromBase64(value: string): Uint8Array<ArrayBuffer> {
   const binary = atob(value);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
@@ -28,7 +28,7 @@ async function getKey(): Promise<CryptoKey> {
   if (cachedKey) return cachedKey;
   const raw = Deno.env.get('MP_TOKEN_ENC_KEY') || '';
   if (!raw) throw new Error('MP_TOKEN_ENC_KEY no está configurado');
-  let bytes: Uint8Array;
+  let bytes: Uint8Array<ArrayBuffer>;
   try {
     bytes = fromBase64(raw.trim());
   } catch {

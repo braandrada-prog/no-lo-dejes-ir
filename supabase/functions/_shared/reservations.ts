@@ -124,14 +124,14 @@ export async function expireStaleReservations(svc: any) {
   return released;
 }
 
-/** Marca publicaciones vencidas. */
+/** Marca publicaciones vencidas: terminó el horario de retiro (offers.pickup_end). */
 export async function expireStaleOffers(svc: any) {
   const now = new Date().toISOString();
   const { data, error } = await svc
     .from('offers')
     .update({ status: 'expired' })
-    .eq('status', 'active')
-    .lt('expires_at', now)
+    .in('status', ['active', 'sold_out'])
+    .lt('pickup_end', now)
     .select('id');
   if (error) throw error;
   return data?.length ?? 0;
