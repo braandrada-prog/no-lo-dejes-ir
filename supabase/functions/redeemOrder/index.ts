@@ -3,8 +3,9 @@ import { corsHeaders, json } from '../_shared/cors.ts';
 import { redeemOrderByCode } from '../_shared/pickup.ts';
  
 /**
- * Validación de retiro desde el panel de administración.
- * La app de comerciantes usa `merchantRedeem` con el mismo núcleo compartido.
+ * Validación de retiro desde el panel de administración (sin control de horario:
+ * el equipo puede resolver excepciones). El panel del comercio usa `merchantRedeem`
+ * con el mismo núcleo compartido.
  */
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });

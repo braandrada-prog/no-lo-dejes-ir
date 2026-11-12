@@ -1,4 +1,3 @@
-// deno-lint-ignore-file no-explicit-any
 import { corsHeaders, json } from '../_shared/cors.ts';
 import { adminClient, getAuthedUser, isTaskAuthorized } from '../_shared/auth.ts';
 import { refreshDueAccounts } from '../_shared/merchantMp.ts';
