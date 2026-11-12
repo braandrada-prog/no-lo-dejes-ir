@@ -3,7 +3,8 @@ import { corsHeaders, json } from '../_shared/cors.ts';
 import { adminClient, getAuthedUser, readSecret } from '../_shared/auth.ts';
 import { mpCreatePreference, resolveMpEnvironment } from '../_shared/mpConfig.ts';
 import { reserveStock } from '../_shared/inventory.ts';
-import { resolveCommission, computeFees } from '../_shared/commissions.ts';
+import { resolveCommission, computeFees, roundMoney } from '../_shared/commissions.ts';
+import { getMerchantCredentials } from '../_shared/merchantMp.ts';
 import { emitEvent, EVENTS } from '../_shared/events.ts';
 import { logTransaction } from '../_shared/payments.ts';
 import {
@@ -62,7 +63,7 @@ Deno.serve(async (req: Request) => {
     if (previous) return previousResponse(previous);
 
     const mp = await resolveMpEnvironment(svc, readSecret);
-    if (!mp.ready) {
+    if (!mp.oauthReady) {
       return json(
         {
           error: 'payments_not_configured',
@@ -98,6 +99,25 @@ Deno.serve(async (req: Request) => {
           error: 'No quedan suficientes paquetes disponibles.',
           code: 'stock',
           available: Number(offer.quantity_available) || 0,
+        },
+        409
+      );
+    }
+
+    // Split de pagos: el cobro se hace en la cuenta de Mercado Pago del comercio.
+    // Sin cuenta vinculada (o con el token vencido) NO se vende: nada de cobrar con la
+    // cuenta de la plataforma. Se verifica antes de reservar stock.
+    const merchant = offer.merchant_id
+      ? await getMerchantCredentials(svc, offer.merchant_id, mp.environment, { mp })
+      : { ok: false, reason: 'not_connected' };
+    if (!merchant.ok) {
+      console.error('Comercio sin Mercado Pago utilizable:', offer.merchant_id, merchant.reason);
+      return json(
+        {
+          error: 'merchant_not_connected',
+          code: 'merchant_not_connected',
+          reason: merchant.reason,
+          message: 'Este comercio todavía no puede recibir pagos online. Probá más tarde o elegí otra oferta.',
         },
         409
       );
@@ -146,6 +166,9 @@ Deno.serve(async (req: Request) => {
     const savings = Math.max(Number(offer.original_price) - unitPrice, 0) * quantity;
     const commission = await resolveCommission(svc, offer.merchant_id);
     const fees = computeFees(total, commission);
+    // 15 % (o el override del comercio) sobre el total, neto para la plataforma.
+    // Mercado Pago descuenta su comisión de pasarela de la parte del comercio.
+    const marketplaceFee = Math.min(roundMoney(fees.commission), roundMoney(total));
 
     const { data: order, error: insertError } = await svc
       .from('orders')
@@ -169,8 +192,10 @@ Deno.serve(async (req: Request) => {
         total,
         savings,
         commission_rate: fees.rate,
-        commission_amount: fees.commission,
-        net_to_merchant: fees.net,
+        commission_amount: marketplaceFee,
+        net_to_merchant: roundMoney(total - marketplaceFee),
+        marketplace_fee: marketplaceFee,
+        collector_id: merchant.mpUserId,
         settlement_status: 'accrued',
         stock_state: 'reserved',
         status: 'pending_payment',
@@ -212,10 +237,12 @@ Deno.serve(async (req: Request) => {
     const origin = (readSecret('APP_URL') || req.headers.get('origin') || '').replace(/\/$/, '');
 
     const preference = await mpCreatePreference({
-      token: mp.token,
+      token: merchant.token,
       environment: mp.environment,
       order,
       origin,
+      marketplaceFee,
+      expiresAt: reservedUntil,
     });
 
     if (!preference.ok || !preference.init_point) {

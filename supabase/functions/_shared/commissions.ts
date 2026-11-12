@@ -25,9 +25,10 @@ export async function resolveCommission(svc: any, merchantId?: string | null) {
 
   let merchantRate: number | null = null;
   if (merchantId) {
-    // Si la tabla merchants no existe todavía (o el id no coincide), se usa la comisión global.
+    // offers.merchant_id apunta a businesses.id. Si el comercio no tiene override
+    // (commission_rate null) o no se encuentra, se usa la comisión global.
     const { data: merchant, error } = await svc
-      .from('merchants')
+      .from('businesses')
       .select('commission_rate')
       .eq('id', merchantId)
       .maybeSingle();

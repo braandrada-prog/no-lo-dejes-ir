@@ -356,27 +356,19 @@ export async function applyPayment(
   }
 
   // ── Pago rechazado o cancelado ───────────────────────────────────────────────
+  // En Checkout Pro el comprador puede reintentar con otro medio sobre la misma
+  // preferencia, así que un rechazo NO cancela la reserva ni libera stock: el pedido
+  // sigue en pending_payment hasta que se paga o vence reserved_until (expireStaleReservations).
   if (providerStatus === 'rejected' || providerStatus === 'cancelled') {
     if (current.status === 'pending_payment') {
-      const claimed = await claimOrder(svc, current.id, 'pending_payment', {
-        status: 'cancelled',
+      await updateOrder(svc, current.id, {
         payment_status: providerStatus,
-        payment_id: paymentId,
         payment_environment: environment,
-        refund_reason: statusDetail || 'Pago no aprobado',
-        stock_state: 'released',
-        settlement_status: 'void',
-        qr_token: null,
         last_reconciled_at: new Date().toISOString(),
       });
 
-      if (claimed) {
-        await restockOffer(svc, current.offer_id, current.quantity, {
-          orderId: current.id,
-          reason: `Pago ${providerStatus}`,
-          type: 'release',
-          actorEmail: actorEmail || 'mpWebhook',
-        });
+      const dedupeKey = `order:${current.id}:payment:${paymentId}:${providerStatus}:notified`;
+      if (!(await alreadyLogged(svc, dedupeKey))) {
         await emitEvent(
           svc,
           EVENTS.paymentRejected,
@@ -393,7 +385,7 @@ export async function applyPayment(
         await notify(svc, {
           user_email: current.user_email,
           title: providerStatus === 'rejected' ? 'Pago rechazado' : 'Pago cancelado',
-          message: `No pudimos confirmar el pago de tu reserva ${current.order_number}. Las unidades volvieron a estar disponibles.`,
+          message: `No pudimos aprobar el pago de tu reserva ${current.order_number}. Mantenemos las unidades reservadas por unos minutos: podés reintentar con otro medio de pago.`,
           type: 'payment',
           link: `/compras/${current.id}`,
         });
@@ -404,15 +396,15 @@ export async function applyPayment(
           order_number: current.order_number,
           payment_id: paymentId,
           provider_status: providerStatus,
+          provider_status_detail: statusDetail,
           amount,
-          dedupe_key: `order:${current.id}:payment:${paymentId}:${providerStatus}:released`,
+          dedupe_key: dedupeKey,
           source,
           actor_email: actorEmail,
-          detail: 'Stock liberado',
+          detail: 'Pago no aprobado: la reserva se mantiene hasta su vencimiento',
         });
-        return { status: 'released', order: claimed };
       }
-      return { status: 'already_resolved', order: current };
+      return { status: 'pending', order: current };
     }
     // Un pedido ya pagado no se cancela por un webhook de rechazo.
     return { status: 'ignored', order: current };

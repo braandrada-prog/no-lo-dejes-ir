@@ -5,6 +5,7 @@ import { mpRefundPayment, resolveMpEnvironment } from '../_shared/mpConfig.ts';
 import { applyRefund, logTransaction } from '../_shared/payments.ts';
 import { emitEvent, EVENTS } from '../_shared/events.ts';
 import { restockOffer } from '../_shared/reservations.ts';
+import { resolveOrderToken } from '../_shared/merchantMp.ts';
  
 /**
  * Cancelación del consumidor (o del administrador).
@@ -118,11 +119,13 @@ Deno.serve(async (req: Request) => {
     }
  
     // Pedido pagado: reembolso.
-    const mp = await resolveMpEnvironment(svc, readSecret);
+    const mp = await resolveMpEnvironment(svc, readSecret, order.payment_environment || undefined);
     const paymentId = String(order.payment_id || '');
+    // Token de la cuenta que cobró (comercio con split, o plataforma en pedidos históricos).
+    const credentials: any = paymentId ? await resolveOrderToken(svc, order, mp) : { ok: false };
  
-    if (mp.ready && paymentId) {
-      const refund = await mpRefundPayment(mp.token, paymentId, Number(order.total));
+    if (credentials.ok && paymentId) {
+      const refund = await mpRefundPayment(credentials.token, paymentId, Number(order.total));
       if (refund.ok) {
         await logTransaction(svc, {
           environment: mp.environment,
