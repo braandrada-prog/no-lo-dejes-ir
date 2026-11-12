@@ -3,6 +3,7 @@ import { corsHeaders, json } from '../_shared/cors.ts';
 import { adminClient, getAuthedUser, readSecret } from '../_shared/auth.ts';
 import { mpRefundPayment, resolveMpEnvironment } from '../_shared/mpConfig.ts';
 import { applyRefund, logTransaction } from '../_shared/payments.ts';
+import { resolveOrderToken } from '../_shared/merchantMp.ts';
  
 /**
  * Reembolso ejecutado por el equipo de la plataforma.
@@ -42,12 +43,22 @@ Deno.serve(async (req: Request) => {
     const targetPayment = paymentId || String(order.payment_id || '');
     const refundAmount = amount > 0 ? amount : Number(order.total) || 0;
  
-    const mp = await resolveMpEnvironment(svc, readSecret);
+    const mp = await resolveMpEnvironment(svc, readSecret, order.payment_environment || undefined);
  
     if (!manual) {
-      if (!mp.ready) {
+      // El reembolso se pide con el token de la cuenta que cobró (la del comercio).
+      // En pagos con split, Mercado Pago devuelve también el marketplace_fee.
+      const credentials = await resolveOrderToken(svc, order, mp);
+      if (!credentials.ok) {
         return json(
-          { error: 'payments_not_configured', message: 'Cargá las credenciales del entorno para reembolsar.' },
+          {
+            error: 'payments_not_configured',
+            message:
+              credentials.source === 'merchant'
+                ? 'La cuenta de Mercado Pago del comercio no está vinculada o venció. Pedile que la reconecte o registrá el reembolso como manual.'
+                : 'Cargá las credenciales del entorno para reembolsar.',
+            detail: { message: credentials.reason || '' },
+          },
           503
         );
       }
@@ -58,7 +69,7 @@ Deno.serve(async (req: Request) => {
         );
       }
  
-      const refund = await mpRefundPayment(mp.token, targetPayment, refundAmount);
+      const refund = await mpRefundPayment(credentials.token, targetPayment, refundAmount);
       if (!refund.ok) {
         await logTransaction(svc, {
           environment: mp.environment,

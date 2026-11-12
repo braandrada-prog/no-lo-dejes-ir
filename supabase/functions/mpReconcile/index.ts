@@ -3,11 +3,18 @@ import { corsHeaders, json } from '../_shared/cors.ts';
 import { adminClient, getAuthedUser, readSecret } from '../_shared/auth.ts';
 import { mpGetPayment, mpSearchPayments, resolveMpEnvironment } from '../_shared/mpConfig.ts';
 import { applyPayment, logTransaction } from '../_shared/payments.ts';
+import { resolveOrderToken } from '../_shared/merchantMp.ts';
 
 async function reconcileOrder(svc: any, mp: any, order: any, meta: any) {
   const found = new Map<string, any>();
 
-  const search = await mpSearchPayments(mp.token, order.id);
+  // El pago pertenece a la cuenta del comercio (split): se consulta con su token.
+  // Pedidos históricos sin collector_id usan el token de la plataforma.
+  const credentials = await resolveOrderToken(svc, order, mp);
+  if (!credentials.ok) return { status: 'token_unavailable', reason: credentials.reason };
+  const environment = credentials.environment || mp.environment;
+
+  const search = await mpSearchPayments(credentials.token, order.id);
   if (search.ok) {
     for (const payment of search.data?.results || []) {
       if (payment?.id) found.set(String(payment.id), payment);
@@ -15,7 +22,7 @@ async function reconcileOrder(svc: any, mp: any, order: any, meta: any) {
   }
 
   if (order.payment_id) {
-    const single = await mpGetPayment(mp.token, order.payment_id);
+    const single = await mpGetPayment(credentials.token, order.payment_id);
     if (single.ok && single.data?.id) found.set(String(single.data.id), single.data);
   }
 
@@ -23,10 +30,15 @@ async function reconcileOrder(svc: any, mp: any, order: any, meta: any) {
 
   const statuses: any[] = [];
   for (const payment of found.values()) {
+    // Solo pagos cobrados por la cuenta registrada en el pedido.
+    if (order.collector_id && String(payment.collector_id || '') !== String(order.collector_id)) {
+      statuses.push({ payment_id: String(payment.id), provider_status: String(payment.status), result: 'collector_mismatch' });
+      continue;
+    }
     const applied = await applyPayment(svc, {
       order,
       payment,
-      environment: mp.environment,
+      environment,
       source: meta.source,
       actorEmail: meta.actorEmail,
     });
@@ -34,7 +46,7 @@ async function reconcileOrder(svc: any, mp: any, order: any, meta: any) {
   }
 
   await logTransaction(svc, {
-    environment: mp.environment,
+    environment,
     kind: 'reconcile',
     order_id: order.id,
     order_number: order.order_number,
@@ -83,10 +95,8 @@ Deno.serve(async (req: Request) => {
 
     const isAdmin = user?.role === 'admin';
 
+    // Sin chequeo global de credenciales: cada pedido se concilia con el token de su comercio.
     const mp = await resolveMpEnvironment(svc, readSecret);
-    if (!mp.ready) {
-      return json({ error: 'payments_not_configured', environment: mp.environment }, 503);
-    }
 
     const body = await req.json().catch(() => ({}));
     const orderId = String(body.order_id || '').trim();
@@ -136,7 +146,7 @@ Deno.serve(async (req: Request) => {
       .limit(15);
     if (pendingError) throw pendingError;
 
-    const summary = { checked: 0, paid: 0, pending: 0, released: 0, refund_required: 0 };
+    const summary = { checked: 0, paid: 0, pending: 0, released: 0, refund_required: 0, token_unavailable: 0 };
     for (const order of pending ?? []) {
       const result = await reconcileOrder(svc, mp, order, { source: 'reconcile', actorEmail: 'reconcile' });
       summary.checked += 1;
@@ -144,6 +154,7 @@ Deno.serve(async (req: Request) => {
       else if (result.status === 'pending' || result.status === 'no_payments') summary.pending += 1;
       else if (result.status === 'released') summary.released += 1;
       else if (result.status === 'refund_required') summary.refund_required += 1;
+      else if (result.status === 'token_unavailable') summary.token_unavailable += 1;
     }
 
     return json({ ok: true, environment: mp.environment, ...summary });

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../services/supabaseClient';
 import CitySelect from '../../components/CitySelect';
+import MercadoPagoConnect from '../../components/merchant/MercadoPagoConnect';
 import { todayAR, toArgISO, isoToArgParts } from '../../lib/argTime';
 
 // "18:00" de hoy en hora argentina -> fecha ISO
@@ -311,6 +312,9 @@ export default function MerchantDashboard() {
             Tu comercio está suspendido y tus ofertas no se muestran en la app. Contactá a soporte.
           </div>
         )}
+
+        {/* Cobros: cuenta de Mercado Pago del comercio (split de pagos) */}
+        <MercadoPagoConnect businessId={business.id} />
 
         {/* SECCIÓN 1: Datos del local */}
         <div className="bg-white shadow rounded-lg p-6">

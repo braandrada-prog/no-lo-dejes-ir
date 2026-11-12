@@ -1,6 +1,17 @@
-   [functions.mpWebhook]
-   verify_jwt = false
-   [functions.mpReconcile]
-   verify_jwt = false
-   [functions.releaseExpiredOrders]
-   verify_jwt = false
+# Funciones invocadas sin JWT de Supabase (Mercado Pago, navegador redirigido o cron).
+# Cada una valida su propio mecanismo: firma HMAC, state OAuth o x-nlid-task-token.
+
+[functions.mpWebhook]
+verify_jwt = false
+
+[functions.mpReconcile]
+verify_jwt = false
+
+[functions.releaseExpiredOrders]
+verify_jwt = false
+
+[functions.mpOauthCallback]
+verify_jwt = false
+
+[functions.mpRefreshTokens]
+verify_jwt = false
