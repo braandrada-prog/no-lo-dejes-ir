@@ -51,15 +51,25 @@ jobs:
         run: npm run build
 
   # 3) Edge Functions (Deno): typecheck y tests de la firma del webhook.
+  # Como hay un package.json en la raíz, Deno resuelve los `npm:` (p. ej.
+  # npm:@supabase/supabase-js@2) desde node_modules/. Se instala con `npm ci` para
+  # respetar package-lock.json y se fija el modo "manual" para que no dependa de
+  # la autodetección de cada versión de Deno.
   edge-functions:
     name: Edge Functions (deno check + test)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - name: Instalar dependencias npm (para los imports npm:)
+        run: npm ci --ignore-scripts
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
       - name: Typecheck
-        run: deno check supabase/functions/*/index.ts
+        run: deno check --node-modules-dir=manual supabase/functions/*/index.ts
       - name: Tests
-        run: deno test supabase/functions/
+        run: deno test --node-modules-dir=manual supabase/functions/
