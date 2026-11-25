@@ -1,7 +1,15 @@
 // deno-lint-ignore-file no-explicit-any
 import { json } from '../_shared/cors.ts';
 import { adminClient, readSecret } from '../_shared/auth.ts';
-import { mpGetPayment, mpSignatureValid, resolveMpEnvironment, MP_ENVIRONMENTS } from '../_shared/mpConfig.ts';
+import {
+  DEFAULT_WEBHOOK_TOLERANCE_SECONDS,
+  MP_ENVIRONMENTS,
+  mpGetPayment,
+  resolveMpEnvironment,
+  verifyMpWebhookSignature,
+  webhookSecretCandidates,
+  webhookSecretNamesFor,
+} from '../_shared/mpConfig.ts';
 import { findAccountByMpUserId, getMerchantCredentials, resolveOrderToken } from '../_shared/merchantMp.ts';
 import { applyPayment, logTransaction } from '../_shared/payments.ts';
 
@@ -20,7 +28,8 @@ async function getOrder(svc: any, id: string) {
  * Se despliega con verify_jwt = false (Mercado Pago no envía JWT de Supabase).
  * La seguridad la dan estos controles:
  *
- * 1. Firma HMAC del webhook con el secreto del entorno (obligatoria en producción).
+ * 1. Firma HMAC-SHA256 (x-signature) obligatoria en TODOS los entornos, con ventana de
+ *    tiempo anti-replay. Se valida antes de cualquier acceso a la base (401 si falla).
  * 2. Nunca se confía en el cuerpo: se consulta el pago real a la API de Mercado Pago
  *    con el token del COMERCIO que cobró (el pago pertenece a su cuenta).
  * 3. Se verifica pedido, cobrador (collector_id), moneda y monto antes de confirmar.
@@ -35,23 +44,40 @@ Deno.serve(async (req: Request) => {
     return json({ ok: true });
   }
 
-  try {
-    const svc = adminClient();
+  if (req.method !== 'POST') {
+    return json({ error: 'Método no permitido' }, 405);
+  }
 
+  try {
     const url = new URL(req.url);
     const body = await req.json().catch(() => ({}));
 
-    const topic = String(
-      body?.type || body?.topic || url.searchParams.get('type') || url.searchParams.get('topic') || ''
-    );
-    const paymentId = String(
-      url.searchParams.get('data.id') || body?.data?.id || url.searchParams.get('id') || body?.id || ''
-    ).trim();
+    // ── 1. Firma criptográfica: ANTES de tocar la base o cualquier lógica de negocio ──
+    // El manifiesto firmado usa el data.id de la query (formato webhook de Mercado Pago).
+    // Las notificaciones IPN antiguas (?topic=&id=) no vienen firmadas y se rechazan.
+    const signedDataId = String(url.searchParams.get('data.id') || body?.data?.id || '').trim();
+    const tolerance = Number(readSecret('MP_WEBHOOK_TOLERANCE_SECONDS')) || DEFAULT_WEBHOOK_TOLERANCE_SECONDS;
+    const signature = await verifyMpWebhookSignature({
+      signature: req.headers.get('x-signature'),
+      requestId: req.headers.get('x-request-id'),
+      dataId: signedDataId,
+      secrets: webhookSecretCandidates(readSecret),
+      toleranceSeconds: tolerance,
+    });
+    if (!signature.ok) {
+      // Sin escrituras en la base: solo log del runtime.
+      console.warn(`mpWebhook: notificación rechazada (${signature.reason})`);
+      return json({ error: 'Firma inválida', reason: signature.reason }, 401);
+    }
+
+    const topic = String(body?.type || body?.topic || url.searchParams.get('type') || url.searchParams.get('topic') || '');
+    const paymentId = signedDataId;
 
     if (topic !== 'payment' || !paymentId) {
       return json({ ok: true, ignored: true });
     }
 
+    const svc = adminClient();
     const hintOrder = await getOrder(svc, String(url.searchParams.get('order') || ''));
     const sellerUserId = String(body?.user_id || '').trim();
 
@@ -66,28 +92,11 @@ Deno.serve(async (req: Request) => {
           : undefined;
     const mp = await resolveMpEnvironment(svc, readSecret, environmentHint);
 
-    const signature = await mpSignatureValid({
-      signature: req.headers.get('x-signature') || '',
-      requestId: req.headers.get('x-request-id') || '',
-      dataId: paymentId,
-      secret: mp.webhookSecret,
-      environment: mp.environment,
-    });
-
-    if (!signature.ok) {
-      await logTransaction(svc, {
-        environment: mp.environment,
-        kind: 'error',
-        order_id: hintOrder?.id,
-        payment_id: paymentId,
-        provider_status: 'invalid_signature',
-        dedupe_key: `webhook:${paymentId}:invalid_signature:${Date.now()}`,
-        source: 'webhook',
-        detail: signature.enforced
-          ? 'Firma del webhook inválida: notificación descartada'
-          : 'Falta el secreto del webhook en producción: notificación descartada',
-      });
-      return json({ error: 'Firma inválida' }, 401);
+    // La firma tiene que ser del secreto de ESTE entorno: una notificación firmada con el
+    // secreto de pruebas nunca se aplica a un pedido de producción (y viceversa).
+    if (!webhookSecretNamesFor(mp.environment).includes(signature.secretName)) {
+      console.warn(`mpWebhook: firma de ${signature.secretName} no válida para el entorno ${mp.environment}`);
+      return json({ error: 'Firma inválida', reason: 'environment_mismatch' }, 401);
     }
 
     // ── Token con el que se consulta el pago ─────────────────────────────────────
@@ -239,7 +248,7 @@ Deno.serve(async (req: Request) => {
       ok: true,
       result: result.status,
       environment: mp.environment,
-      signature: signature.enforced ? 'verified' : 'not_configured',
+      signature: 'verified',
     });
   } catch (error) {
     return json({ error: (error as Error).message }, 500);

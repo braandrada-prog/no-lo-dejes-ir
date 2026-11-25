@@ -22,3 +22,14 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Variables de entorno y secretos (nunca se versionan)
+.env
+.env.*
+*.env
+!.env.example
+
+# Metadatos locales del CLI de Supabase (project-ref, pooler URL, org id)
+supabase/.temp/
+mi-proyecto-supabase/supabase/.temp/
+.vercel

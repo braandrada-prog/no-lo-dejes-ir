@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+# Mínimo privilegio: el workflow solo lee el repo.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # 1) Secretos: falla si hay .env versionados o tokens/JWT en el código o el historial.
+  secrets:
+    name: Escaneo de secretos
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # historial completo para escanear todos los commits
+      - name: Buscar .env y secretos (código + historial)
+        run: bash scripts/check-secrets.sh --history
+
+  # 2) Frontend (React + Vite): instalación limpia, auditoría, lint y build.
+  frontend:
+    name: Frontend (deps, audit, lint, build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - name: Instalación limpia (npm ci)
+        run: npm ci
+      - name: Auditoría de dependencias (falla con severidad high o critical)
+        run: npm audit --audit-level=high
+      - name: Lint
+        # TODO: hacerlo bloqueante cuando se corrijan los 11 errores preexistentes de ESLint.
+        continue-on-error: true
+        run: npm run lint
+      - name: Build de producción
+        env:
+          # Valores ficticios: el build solo necesita que existan, no se conecta a nada.
+          VITE_SUPABASE_URL: https://example.supabase.co
+          VITE_SUPABASE_ANON_KEY: ci-placeholder
+        run: npm run build
+
+  # 3) Edge Functions (Deno): typecheck y tests de la firma del webhook.
+  edge-functions:
+    name: Edge Functions (deno check + test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Typecheck
+        run: deno check supabase/functions/*/index.ts
+      - name: Tests
+        run: deno test supabase/functions/

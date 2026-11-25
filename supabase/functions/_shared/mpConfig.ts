@@ -262,47 +262,101 @@ export function mpRefundPayment(token: string, paymentId: string | number, amoun
 
 const encoder = new TextEncoder();
 
+/** Ventana de validez del `ts` firmado (segundos). Configurable con MP_WEBHOOK_TOLERANCE_SECONDS. */
+export const DEFAULT_WEBHOOK_TOLERANCE_SECONDS = 600;
+
+export type SignatureFailure =
+  | 'secret_not_configured'
+  | 'missing_signature'
+  | 'malformed_signature'
+  | 'missing_request_id'
+  | 'missing_data_id'
+  | 'timestamp_expired'
+  | 'invalid_signature';
+
+/** Parsea `ts=...,v1=...` del header x-signature. */
+function parseSignatureHeader(header: string) {
+  const parts: Record<string, string> = {};
+  for (const chunk of String(header).split(',')) {
+    const idx = chunk.indexOf('=');
+    if (idx <= 0) continue;
+    parts[chunk.slice(0, idx).trim()] = chunk.slice(idx + 1).trim();
+  }
+  return { ts: parts.ts || '', v1: (parts.v1 || '').toLowerCase() };
+}
+
+async function hmacSha256Hex(secret: string, message: string) {
+  const key = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, [
+    'sign',
+  ]);
+  const digest = await crypto.subtle.sign('HMAC', key, encoder.encode(message));
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
 /**
- * Firma HMAC del webhook (x-signature). Mercado Pago usa el manifiesto
- * `id:<data.id>;request-id:<x-request-id>;ts:<ts>;` con el secreto de la aplicación.
+ * Verificación ESTRICTA de la firma HMAC-SHA256 del webhook (header x-signature).
  *
- * Sin secreto configurado: en producción se RECHAZA; en pruebas se acepta y se informa
- * `enforced: false` (igual se consulta el pago real a la API antes de aplicar nada).
+ * Mercado Pago firma el manifiesto `id:<data.id>;request-id:<x-request-id>;ts:<ts>;`
+ * con el secreto de la aplicación. Reglas (fail-closed, en TODOS los entornos):
+ *  - Sin ningún secreto configurado → se rechaza.
+ *  - Falta x-signature, x-request-id o data.id, o el header está mal formado → se rechaza.
+ *  - `ts` fuera de la ventana de tolerancia (replay) → se rechaza.
+ *  - La firma debe coincidir (comparación en tiempo constante) con alguno de los
+ *    secretos candidatos; se devuelve cuál coincidió.
+ *
+ * No toca la base de datos: se llama antes de cualquier lógica de negocio.
  */
-export async function mpSignatureValid({
+export async function verifyMpWebhookSignature({
   signature,
   requestId,
   dataId,
-  secret,
-  environment,
+  secrets,
+  toleranceSeconds = DEFAULT_WEBHOOK_TOLERANCE_SECONDS,
+  nowMs = Date.now(),
 }: {
   signature?: string | null;
   requestId?: string | null;
   dataId?: string | null;
-  secret?: string;
-  environment?: string;
-}) {
-  if (!secret) return { ok: environment !== 'production', enforced: false };
-  if (!signature) return { ok: false, enforced: true };
-  const parts = Object.fromEntries(
-    String(signature)
-      .split(',')
-      .map((part) => {
-        const [k, v] = part.split('=');
-        return [String(k).trim(), String(v || '').trim()];
-      })
-  );
-  const ts = parts.ts;
-  const v1 = parts.v1;
-  if (!ts || !v1) return { ok: false, enforced: true };
+  secrets: Array<{ name: string; value: string }>;
+  toleranceSeconds?: number;
+  nowMs?: number;
+}): Promise<{ ok: true; secretName: string } | { ok: false; reason: SignatureFailure }> {
+  const candidates = secrets.filter((s) => s.value);
+  if (!candidates.length) return { ok: false, reason: 'secret_not_configured' };
+  if (!signature) return { ok: false, reason: 'missing_signature' };
+  if (!requestId) return { ok: false, reason: 'missing_request_id' };
+  if (!dataId) return { ok: false, reason: 'missing_data_id' };
 
-  const manifest = `id:${String(dataId || '').toLowerCase()};request-id:${requestId || ''};ts:${ts};`;
-  const key = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, [
-    'sign',
-  ]);
-  const digest = await crypto.subtle.sign('HMAC', key, encoder.encode(manifest));
-  const hex = Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-  return { ok: timingSafeEqual(hex, v1.toLowerCase()), enforced: true };
+  const { ts, v1 } = parseSignatureHeader(signature);
+  if (!/^\d+$/.test(ts) || !/^[0-9a-f]{64}$/.test(v1)) return { ok: false, reason: 'malformed_signature' };
+
+  // Mercado Pago envía `ts` en milisegundos; se aceptan también segundos por compatibilidad.
+  const tsNum = Number(ts);
+  const tsMs = tsNum > 1e12 ? tsNum : tsNum * 1000;
+  if (!Number.isFinite(tsMs) || Math.abs(nowMs - tsMs) > toleranceSeconds * 1000) {
+    return { ok: false, reason: 'timestamp_expired' };
+  }
+
+  const manifest = `id:${String(dataId).toLowerCase()};request-id:${requestId};ts:${ts};`;
+  let matched = '';
+  for (const candidate of candidates) {
+    const expected = await hmacSha256Hex(candidate.value, manifest);
+    // Se evalúan todos los candidatos para no filtrar cuál coincidió por timing.
+    if (timingSafeEqual(expected, v1) && !matched) matched = candidate.name;
+  }
+  return matched ? { ok: true, secretName: matched } : { ok: false, reason: 'invalid_signature' };
+}
+
+/** Todos los secretos de webhook configurados (por entorno + históricos). */
+export function webhookSecretCandidates(readSecret: (name: string) => string) {
+  return ['MP_WEBHOOK_SECRET_PROD', 'MP_WEBHOOK_SECRET_TEST', 'MP_WEBHOOK_SECRET']
+    .map((name) => ({ name, value: readSecret(name) || '' }))
+    .filter((s) => s.value);
+}
+
+/** Secretos válidos para un entorno concreto (el histórico solo vale en pruebas, igual que `pick`). */
+export function webhookSecretNamesFor(environment: string) {
+  return environment === 'production' ? ['MP_WEBHOOK_SECRET_PROD'] : ['MP_WEBHOOK_SECRET_TEST', 'MP_WEBHOOK_SECRET'];
 }
