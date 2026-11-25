@@ -23,7 +23,7 @@
  * MP_ACCESS_TOKEN / MP_WEBHOOK_SECRET / MP_CLIENT_ID / MP_CLIENT_SECRET.
  * Nunca se exponen credenciales al frontend y nunca se guardan datos de tarjeta.
  */
-import { timingSafeEqual } from './crypto.ts';
+import { hmacSha256Hex, timingSafeEqual } from './crypto.ts';
 
 export const MP_API = 'https://api.mercadopago.com';
 export const MP_AUTH_URL = 'https://auth.mercadopago.com/authorization';
@@ -260,7 +260,6 @@ export function mpRefundPayment(token: string, paymentId: string | number, amoun
 
 // ── Firma del webhook ───────────────────────────────────────────────────────────
 
-const encoder = new TextEncoder();
 
 /** Ventana de validez del `ts` firmado (segundos). Configurable con MP_WEBHOOK_TOLERANCE_SECONDS. */
 export const DEFAULT_WEBHOOK_TOLERANCE_SECONDS = 600;
@@ -283,16 +282,6 @@ function parseSignatureHeader(header: string) {
     parts[chunk.slice(0, idx).trim()] = chunk.slice(idx + 1).trim();
   }
   return { ts: parts.ts || '', v1: (parts.v1 || '').toLowerCase() };
-}
-
-async function hmacSha256Hex(secret: string, message: string) {
-  const key = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, [
-    'sign',
-  ]);
-  const digest = await crypto.subtle.sign('HMAC', key, encoder.encode(message));
-  return Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
 }
 
 /**

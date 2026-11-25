@@ -1,6 +1,6 @@
 // deno-lint-ignore-file no-explicit-any
 import { corsHeaders, json } from '../_shared/cors.ts';
-import { adminClient, getAuthedUser, readSecret } from '../_shared/auth.ts';
+import { adminClient, getAuthedUser, isTaskAuthorized, readSecret } from '../_shared/auth.ts';
 import { mpGetPayment, mpSearchPayments, resolveMpEnvironment } from '../_shared/mpConfig.ts';
 import { applyPayment, logTransaction } from '../_shared/payments.ts';
 import { resolveOrderToken } from '../_shared/merchantMp.ts';
@@ -62,35 +62,20 @@ async function reconcileOrder(svc: any, mp: any, order: any, meta: any) {
   return { status: statuses[0]?.result || 'unknown', payments: statuses };
 }
 
-// Token para la tarea programada. Preferí el secreto NLID_TASK_TOKEN; si no existe,
-// se usa el valor `task_token` de platform_settings (como en Base44).
-async function expectedTaskToken(svc: any) {
-  const fromSecret = readSecret('NLID_TASK_TOKEN');
-  if (fromSecret) return fromSecret;
-  const { data } = await svc.from('platform_settings').select('value').eq('key', 'task_token').maybeSingle();
-  return data?.value || '';
-}
-
 /**
  * Conciliación de pagos.
  * - Consumidor: consulta su propio pedido ("ya pagué, verificar").
- * - Administrador o tarea programada: revisa los pedidos pendientes y los sincroniza.
+ * - Administrador o tarea programada (firmada con HMAC-SHA256, header x-nlid-signature):
+ *   revisa los pedidos pendientes y los sincroniza.
  */
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {
     const svc = adminClient();
-    const user = await getAuthedUser(req, svc);
-
-    let taskAuthorized = false;
-    if (!user) {
-      const token = req.headers.get('x-nlid-task-token') || '';
-      if (token) {
-        const expected = await expectedTaskToken(svc);
-        taskAuthorized = Boolean(expected) && token === expected;
-      }
-    }
+    // La firma de la tarea se verifica antes de leer el body o tocar datos.
+    const taskAuthorized = await isTaskAuthorized(req, svc, 'mpReconcile');
+    const user = taskAuthorized ? null : await getAuthedUser(req, svc);
     if (!user && !taskAuthorized) return json({ error: 'Unauthorized' }, 401);
 
     const isAdmin = user?.role === 'admin';

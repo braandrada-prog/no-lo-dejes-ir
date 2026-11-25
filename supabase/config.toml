@@ -1,5 +1,6 @@
 # Funciones invocadas sin JWT de Supabase (Mercado Pago, navegador redirigido o cron).
-# Cada una valida su propio mecanismo: firma HMAC, state OAuth o x-nlid-task-token.
+# Cada una valida su propio mecanismo: firma HMAC de Mercado Pago (x-signature), state OAuth
+# + PKCE, o firma HMAC de tarea programada (x-nlid-signature, ver _shared/auth.ts).
 
 [functions.mpWebhook]
 verify_jwt = false

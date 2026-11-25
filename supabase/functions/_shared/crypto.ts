@@ -60,6 +60,18 @@ export async function decryptToken(stored: string | null | undefined): Promise<s
   return new TextDecoder().decode(plain);
 }
 
+/** HMAC-SHA256 en hexadecimal (minúsculas). */
+export async function hmacSha256Hex(secret: string, message: string) {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, [
+    'sign',
+  ]);
+  const digest = await crypto.subtle.sign('HMAC', key, enc.encode(message));
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
 /** Comparación en tiempo constante (firmas HMAC, tokens de tarea). */
 export function timingSafeEqual(a: string, b: string) {
   const left = new TextEncoder().encode(String(a));

@@ -79,33 +79,34 @@ export async function expireStaleReservations(svc: any) {
     .limit(50);
   if (error) throw error;
 
-  let released = 0;
-  for (const order of stale ?? []) {
-    // Compare-and-set: solo vence si sigue pendiente de pago.
-    const { data: applied, error: claimError } = await svc
-      .from('orders')
-      .update({
-        status: 'expired',
-        payment_status: 'expired',
-        stock_state: 'released',
-        refund_reason: 'Reserva vencida sin pago confirmado',
-      })
-      .eq('id', order.id)
-      .eq('status', 'pending_payment')
-      .select('id');
+  if (!stale?.length) return 0;
 
-    if (claimError) {
-      console.error('No se pudo vencer la reserva:', order.id, claimError);
-      continue;
-    }
-    if (!applied?.length) continue;
+  // 1) Un solo UPDATE por lotes con compare-and-set: Postgres solo modifica (y devuelve)
+  //    las filas que SIGUEN en pending_payment. Si un webhook confirmó el pago entre el
+  //    SELECT y este UPDATE, ese pedido no se vence ni se le devuelve stock.
+  const { data: claimed, error: claimError } = await svc
+    .from('orders')
+    .update({
+      status: 'expired',
+      payment_status: 'expired',
+      stock_state: 'released',
+      refund_reason: 'Reserva vencida sin pago confirmado',
+    })
+    .in('id', stale.map((order: any) => order.id))
+    .eq('status', 'pending_payment')
+    .select('id, order_number, offer_id, quantity, merchant_id');
+  if (claimError) throw claimError;
+  if (!claimed?.length) return 0;
 
+  // 2) Efectos por pedido (liberar stock + evento) en paralelo y con concurrencia acotada.
+  //    release_offer_stock es un UPDATE atómico, así que es seguro aun con varias órdenes
+  //    de la misma oferta. Un fallo puntual se registra y no aborta el resto del lote.
+  const results = await mapSettled(claimed, EXPIRY_CONCURRENCY, async (order: any) => {
     await restockOffer(svc, order.offer_id, order.quantity, {
       orderId: order.id,
       reason: 'Reserva vencida',
       type: 'expiry',
     });
-
     await emitEvent(
       svc,
       EVENTS.orderExpired,
@@ -118,10 +119,44 @@ export async function expireStaleReservations(svc: any) {
       },
       { merchantId: order.merchant_id, orderId: order.id }
     );
+  });
 
-    released += 1;
-  }
-  return released;
+  results.forEach((result, index) => {
+    if (result.status === 'rejected') {
+      // El pedido ya quedó vencido: el stock pendiente se puede reponer con un ajuste manual.
+      console.error('Reserva vencida sin liberar stock:', claimed[index].id, result.reason);
+    }
+  });
+
+  return claimed.length;
+}
+
+/** Máximo de pedidos procesados a la vez al vencer reservas (no satura la base). */
+const EXPIRY_CONCURRENCY = 8;
+
+/**
+ * Como Promise.allSettled, pero con a lo sumo `limit` tareas en vuelo.
+ * Mantiene el orden de los resultados respecto de `items`.
+ */
+export async function mapSettled<T, R>(
+  items: T[],
+  limit: number,
+  task: (item: T, index: number) => Promise<R>
+): Promise<PromiseSettledResult<R>[]> {
+  const results: PromiseSettledResult<R>[] = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const index = next++;
+      try {
+        results[index] = { status: 'fulfilled', value: await task(items[index], index) };
+      } catch (reason) {
+        results[index] = { status: 'rejected', reason };
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(Math.max(limit, 1), items.length) }, worker));
+  return results;
 }
 
 /** Marca publicaciones vencidas: terminó el horario de retiro (offers.pickup_end). */
