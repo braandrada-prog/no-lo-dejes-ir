@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { Loader2 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { callFunction } from '../../lib/callFunction';
 
@@ -44,16 +45,12 @@ export default function MercadoPagoConnect({ businessId }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState(() => messageFromParams(searchParams));
 
-  // Recarga manual (después de desvincular)
+  // Recarga silenciosa (después de desvincular): no oculta la tarjeta mientras consulta.
   const load = useCallback(async () => {
-    setLoading(true);
     try {
       setConnection(await fetchConnection(businessId));
     } catch (err) {
       console.error('No se pudo leer la conexión con Mercado Pago:', err.message);
-      setConnection(null);
-    } finally {
-      setLoading(false);
     }
   }, [businessId]);
 
@@ -102,12 +99,15 @@ export default function MercadoPagoConnect({ businessId }) {
     if (!window.confirm('Si desvinculás la cuenta, tus ofertas no se podrán comprar hasta que la vuelvas a conectar. ¿Continuar?')) {
       return;
     }
+    // No es optimista a propósito: es una operación de cobros y solo se muestra como
+    // desvinculada cuando el servidor lo confirma. Mientras tanto, el botón indica el progreso.
     setBusy(true);
     setMessage(null);
     try {
       await callFunction('mpOauthDisconnect', { business_id: businessId });
+      setConnection((prev) => (prev ? { ...prev, connected: false, status: 'revoked' } : prev));
       setMessage({ type: 'success', text: 'Cuenta desvinculada.' });
-      await load();
+      load();
     } catch (err) {
       setMessage({ type: 'error', text: err.detail?.message || 'No pudimos desvincular la cuenta.' });
     } finally {
@@ -142,9 +142,11 @@ export default function MercadoPagoConnect({ businessId }) {
                 type="button"
                 onClick={disconnect}
                 disabled={busy}
-                className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                aria-busy={busy}
+                className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
               >
-                Desvincular
+                {busy && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+                {busy ? 'Desvinculando…' : 'Desvincular'}
               </button>
             ) : (
               <button

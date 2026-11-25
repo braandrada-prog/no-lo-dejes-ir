@@ -1,6 +1,7 @@
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { Heart, Home, Receipt, Search, User } from 'lucide-react';
 import { cn } from '../lib/utils';
+import Footer from './Footer';
 
 const items = [
   { to: '/', label: 'Inicio', icon: Home, end: true },
@@ -27,6 +28,7 @@ export default function Layout() {
         <div key={pathname} className="page-enter">
           <Outlet />
         </div>
+        <Footer />
       </div>
 
       <nav className="safe-bottom fixed inset-x-0 bottom-0 z-40 border-t border-border/60 bg-card/85 backdrop-blur-xl">

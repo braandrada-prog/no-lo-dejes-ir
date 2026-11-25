@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { CircleMarker, MapContainer, Popup, TileLayer, useMap } from 'react-leaflet';
 import { Link } from 'react-router-dom';
 import { ars } from '../lib/format';
+import { isValidPoint } from '../lib/geocoding';
 
 // Colores de los puntos del mapa (Leaflet no usa las variables de Tailwind)
 const OFFER_COLOR = '#7539d0'; // morado de la marca
@@ -22,13 +23,23 @@ function Recenter({ position }) {
 }
 
 export default function MapView({ offers = [], center, userPoint }) {
-  const points = offers.filter((o) => Number(o.lat) && Number(o.lng));
+  // Leaflet espera [lat, lng]. Solo se dibujan comercios con ubicación propia: los que no
+  // la tienen traen el centro de la ciudad desde la vista y el pin quedaría en otro lugar.
+  const points = offers.filter((o) => o.location_exact !== false && isValidPoint(o));
+  const hidden = offers.length - points.length;
 
   // Coordenadas centradas por defecto en la región (Salto / Pergamino)
   const defaultCenter = [Number(center?.lat) || -34.2969, Number(center?.lng) || -60.2537];
 
   return (
-    <div className="h-[440px] w-full overflow-hidden rounded-[26px] ring-1 ring-border shadow-sm">
+    <div className="relative h-[440px] w-full overflow-hidden rounded-[26px] ring-1 ring-border shadow-sm">
+      {hidden > 0 && (
+        <p className="pointer-events-none absolute inset-x-3 top-3 z-[1000] mx-auto w-fit rounded-full bg-white/95 px-3 py-1.5 text-center text-[11px] font-medium text-slate-600 shadow-sm">
+          {hidden === 1
+            ? '1 oferta no aparece en el mapa porque el comercio no cargó su ubicación.'
+            : `${hidden} ofertas no aparecen en el mapa porque sus comercios no cargaron su ubicación.`}
+        </p>
+      )}
       <MapContainer
         center={defaultCenter}
         zoom={13}

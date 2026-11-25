@@ -153,19 +153,34 @@ export default function AdminOffers({ user }) {
     await load();
   };
 
+  // Filas con un borrado en curso (evita doble clic).
+  const [pendingIds, setPendingIds] = useState(() => new Set());
+
+  // Borrado optimista: la fila desaparece al instante y vuelve si Supabase falla.
   const remove = async (offer) => {
+    if (pendingIds.has(offer.id)) return;
     if (!window.confirm(`¿Eliminar la publicación "${offer.title}"?`)) return;
     setError('');
 
+    const snapshot = offers;
+    setPendingIds((prev) => new Set(prev).add(offer.id));
+    setOffers((list) => list.filter((o) => o.id !== offer.id));
+
     const { error: deleteError } = await supabase.from('offers').delete().eq('id', offer.id);
+    setPendingIds((prev) => {
+      const next = new Set(prev);
+      next.delete(offer.id);
+      return next;
+    });
+
     if (deleteError) {
       console.error('Error eliminando la publicación:', deleteError);
+      setOffers(snapshot);
       setError('No se pudo eliminar la publicación.');
       return;
     }
 
-    await logAction(user, 'offer.delete', offer.title, 'Publicación eliminada');
-    await load();
+    logAction(user, 'offer.delete', offer.title, 'Publicación eliminada');
   };
 
   const inputClass = 'mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm';
@@ -359,7 +374,13 @@ export default function AdminOffers({ user }) {
                       <button type="button" aria-label="Editar" onClick={() => setForm(toForm(offer))}>
                         <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
                       </button>
-                      <button type="button" aria-label="Eliminar" onClick={() => remove(offer)}>
+                      <button
+                        type="button"
+                        aria-label="Eliminar"
+                        onClick={() => remove(offer)}
+                        disabled={pendingIds.has(offer.id)}
+                        className="disabled:opacity-50"
+                      >
                         <Trash2 className="h-3.5 w-3.5 text-destructive" />
                       </button>
                     </div>

@@ -5,6 +5,7 @@ import { App as CapApp } from '@capacitor/app';
 import ScrollToTop from './components/ScrollToTop';
 import Layout from './components/Layout';
 import PageNotFound from './components/PageNotFound';
+import CookieConsentBanner from './components/CookieConsentBanner';
 
 import Home from './pages/Home';
 import Explore from './pages/Explore';
@@ -78,6 +79,7 @@ function App() {
   return (
     <Router>
       <ScrollToTop />
+      <CookieConsentBanner />
       <Routes>
         {/* Autenticación con Supabase (Consumidores) */}
         <Route path="/login" element={<Login />} />

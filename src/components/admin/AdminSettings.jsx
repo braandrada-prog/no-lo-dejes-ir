@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { RefreshCw } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { callFunction } from '../../lib/callFunction';
 
@@ -39,9 +40,12 @@ export default function AdminSettings() {
   const [error, setError] = useState('');
   const [busyId, setBusyId] = useState('');
 
-  // Recarga manual: conserva el entorno elegido en el selector.
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Recarga manual: conserva el entorno elegido y deja la tabla visible mientras recarga
+  // (solo el botón muestra el progreso; queda deshabilitado para evitar clics repetidos).
   const load = useCallback(async () => {
-    setLoading(true);
+    setRefreshing(true);
     setError('');
     try {
       const result = await fetchSettings();
@@ -50,7 +54,7 @@ export default function AdminSettings() {
     } catch (err) {
       setError(err.message);
     } finally {
-      setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
@@ -126,9 +130,12 @@ export default function AdminSettings() {
             <button
               type="button"
               onClick={load}
-              className="rounded border border-gray-300 px-3 py-1 text-gray-700 hover:bg-gray-50"
+              disabled={refreshing || loading}
+              aria-busy={refreshing}
+              className="flex items-center gap-1.5 rounded border border-gray-300 px-3 py-1 text-gray-700 hover:bg-gray-50 disabled:opacity-60"
             >
-              Actualizar
+              <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} aria-hidden="true" />
+              {refreshing ? 'Actualizando…' : 'Actualizar'}
             </button>
           </div>
         </div>

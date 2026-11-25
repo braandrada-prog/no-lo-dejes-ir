@@ -3,6 +3,7 @@ import { ChevronDown, MessageCircle } from 'lucide-react';
 import { supabase } from '../services/supabaseClient';
 import PageHeader from '../components/PageHeader';
 import { useSession } from '../hooks/useSession';
+import ContactDetails from '../components/ContactDetails';
 
 const FAQ = [
   {
@@ -159,6 +160,15 @@ export default function Help() {
             </button>
           </form>
         )}
+      </section>
+
+      <section className="mt-3 rounded-[26px] bg-card p-4 ring-1 ring-border/60">
+        <h2 className="text-sm font-semibold text-foreground">Otros canales de contacto</h2>
+        <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
+          Si tenés un problema con un cobro, contactanos antes de iniciar un contracargo: lo resolvemos más rápido
+          y por el mismo medio de pago.
+        </p>
+        <ContactDetails className="mt-3" subject="Consulta desde la app" />
       </section>
 
       <p className="mt-4 text-center text-[10px] leading-relaxed text-muted-foreground">

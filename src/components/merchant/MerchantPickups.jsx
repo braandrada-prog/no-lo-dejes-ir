@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Loader2 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import { callFunction } from '../../lib/callFunction';
 import { ars } from '../../lib/format';
@@ -146,9 +147,25 @@ export default function MerchantPickups() {
     setSubmitting(true);
     setResult(null);
     try {
+      // No es optimista: el servidor decide si el código es válido. Confirmado el retiro,
+      // se mueve el pedido a "entregados" al instante y luego se sincroniza con el servidor.
       const data = await callFunction('merchantRedeem', { code });
-      setResult({ ok: true, summary: data?.summary || null });
+      const summary = data?.summary || null;
+      setResult({ ok: true, summary });
       setCode('');
+      if (summary?.order_number) {
+        setLists((prev) => {
+          const order = prev.pending.find((row) => row.order_number === summary.order_number);
+          if (!order) return prev;
+          return {
+            pending: prev.pending.filter((row) => row !== order),
+            delivered: [
+              { ...order, status: 'picked_up', redeemed_at: summary.redeemed_at || new Date().toISOString() },
+              ...prev.delivered,
+            ],
+          };
+        });
+      }
       refresh();
     } catch (err) {
       const detail = err.detail || {};
@@ -177,7 +194,7 @@ export default function MerchantPickups() {
           Pedile al cliente el código de {CODE_LENGTH} caracteres que aparece debajo de su QR en la app.
         </p>
 
-        <form onSubmit={redeem} className="mt-4 flex flex-wrap items-center gap-3">
+        <form onSubmit={redeem} aria-busy={submitting} className="mt-4 flex flex-wrap items-center gap-3">
           <label htmlFor="pickup-code" className="sr-only">
             Código de retiro
           </label>
@@ -186,6 +203,7 @@ export default function MerchantPickups() {
             type="text"
             value={code}
             onChange={onCodeChange}
+            readOnly={submitting}
             placeholder="ABC123"
             maxLength={CODE_LENGTH}
             autoComplete="off"
@@ -200,8 +218,9 @@ export default function MerchantPickups() {
           <button
             type="submit"
             disabled={code.length !== CODE_LENGTH || submitting}
-            className="rounded-md bg-green-600 px-5 py-3 text-sm font-semibold text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex items-center gap-2 rounded-md bg-green-600 px-5 py-3 text-sm font-semibold text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
+            {submitting && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
             {submitting ? 'Validando…' : 'Validar entrega'}
           </button>
           <span id="pickup-code-help" className="text-xs text-gray-500">

@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useTransition } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowRight, Bell, ChevronDown, Leaf, MapPin, Search, Sparkles, Sprout } from 'lucide-react';
 import { Geolocation } from '@capacitor/geolocation';
@@ -18,6 +18,9 @@ import { useOffers } from '../hooks/useOffers';
 
 export default function Home() {
   const navigate = useNavigate();
+  // La navegación corre como transición: la UI actual sigue respondiendo y el botón
+  // muestra feedback mientras se prepara la página de destino.
+  const [isNavigating, startTransition] = useTransition();
   const [city, setCity] = useCity();
 
   // Solicitar permiso y obtener la ubicación real traducida a ciudad
@@ -159,8 +162,9 @@ export default function Home() {
 
             <button
               type="button"
-              onClick={() => navigate('/explorar')}
-              className="press mt-6 flex h-13 w-full items-center gap-3 rounded-2xl bg-white/95 backdrop-blur-xs px-4 text-left border border-slate-200 shadow-xs hover:bg-white transition"
+              onClick={() => startTransition(() => navigate('/explorar'))}
+              aria-busy={isNavigating}
+              className="press mt-6 flex aria-busy:opacity-70 h-13 w-full items-center gap-3 rounded-2xl bg-white/95 backdrop-blur-xs px-4 text-left border border-slate-200 shadow-xs hover:bg-white transition"
             >
               <Search className="h-[18px] w-[18px] shrink-0 text-emerald-600" />
               <span className="flex-1 truncate text-[14px] font-Montserrat text-slate-400">

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Check, Copy, Navigation, Clock, CheckCircle2, AlertTriangle, Loader2, RefreshCw, XCircle } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
@@ -10,17 +10,20 @@ import PageHeader from '../components/PageHeader';
 import EmptyState from '../components/feedback/EmptyState';
 import { ars, dateLabel, orderStatus, pickupWindow, statusClasses } from '../lib/format';
 import { mapsLink } from '../lib/geo';
+import { copyToClipboard } from '../lib/clipboard';
 
 export default function OrderDetail() {
   const { id } = useParams();
   const { user } = useSession();
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState(false); // false | 'ok' | 'error'
+  const copyTimer = useRef(null);
+  useEffect(() => () => clearTimeout(copyTimer.current), []);
   const [busy, setBusy] = useState('');
   const [notice, setNotice] = useState('');
   const [actionError, setActionError] = useState('');
-  const [now, setNow] = useState(Date.now());
+  const [now, setNow] = useState(() => Date.now());
 
   const fetchOrder = async () => {
     const { data, error } = await supabase.from('orders').select('*').eq('id', id).maybeSingle();
@@ -51,10 +54,20 @@ export default function OrderDetail() {
     return () => clearInterval(timer);
   }, [order?.status]);
 
+  // Feedback inmediato al tocar: se marca "copiado" en el acto y se revierte si el
+  // portapapeles falla (WebView sin permisos, contexto no seguro, etc.).
   const copyCode = async () => {
-    await navigator.clipboard.writeText(order.pickup_code || '');
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1800);
+    const value = order?.pickup_code || '';
+    if (!value) return;
+    clearTimeout(copyTimer.current);
+    setCopied('ok');
+    try {
+      await copyToClipboard(value);
+    } catch (err) {
+      console.error('No se pudo copiar el código:', err);
+      setCopied('error');
+    }
+    copyTimer.current = setTimeout(() => setCopied(false), 1800);
   };
 
   const reload = async () => {
@@ -217,8 +230,16 @@ export default function OrderDetail() {
                 onClick={copyCode}
                 className="press mx-auto mt-3 flex h-11 items-center gap-2 rounded-full bg-secondary px-4 text-[12.5px] font-bold text-secondary-foreground"
               >
-                {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                {copied ? 'Código copiado' : 'Copiar código'}
+                {copied === 'ok' ? (
+                  <Check className="h-4 w-4" />
+                ) : copied === 'error' ? (
+                  <XCircle className="h-4 w-4" />
+                ) : (
+                  <Copy className="h-4 w-4" />
+                )}
+                <span aria-live="polite">
+                  {copied === 'ok' ? 'Código copiado' : copied === 'error' ? 'No se pudo copiar' : 'Copiar código'}
+                </span>
               </button>
 
               <p className="mt-3 text-center text-[11px] leading-relaxed text-muted-foreground">

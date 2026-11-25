@@ -1,5 +1,7 @@
 import { useParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
+import ContactDetails from '../components/ContactDetails';
+import { company } from '../config/company';
 
 const TERMS = [
   {
@@ -30,12 +32,16 @@ const TERMS = [
     h: '7. Cuenta de usuario',
     p: 'Sos responsable de la veracidad de tus datos y del uso de tu cuenta. Podés solicitar la baja y la eliminación de tus datos personales en cualquier momento.',
   },
+  {
+    h: '8. Titular del servicio y contacto',
+    p: `El servicio es prestado por ${company.legalName} (CUIT ${company.taxId}), con domicilio legal en ${company.address}. Para consultas, reclamos o desconocimiento de un cargo, escribinos a ${company.supportEmail} o llamanos al ${company.supportPhone} (${company.supportHours}). Te recomendamos contactarnos antes de iniciar un contracargo: resolvemos los reclamos por el mismo medio de pago.`,
+  },
 ];
 
 const PRIVACY = [
   {
     h: '1. Responsable del tratamiento',
-    p: 'Los datos personales que brindás se utilizan para gestionar tu cuenta, procesar reservas y pagos, emitir comprobantes y brindarte soporte. El tratamiento se rige por la Ley 25.326 de Protección de Datos Personales de la República Argentina.',
+    p: `El responsable de la base de datos es ${company.legalName} (CUIT ${company.taxId}), con domicilio en ${company.address}. Los datos personales que brindás se utilizan para gestionar tu cuenta, procesar reservas y pagos, emitir comprobantes y brindarte soporte. El tratamiento se rige por la Ley 25.326 de Protección de Datos Personales de la República Argentina.`,
   },
   {
     h: '2. Datos que recopilamos',
@@ -55,7 +61,11 @@ const PRIVACY = [
   },
   {
     h: '6. Tus derechos',
-    p: 'Podés solicitar acceso, rectificación, actualización o supresión de tus datos. La Agencia de Acceso a la Información Pública es el órgano de control de la Ley 25.326. Las solicitudes se gestionan desde «Ayuda y soporte» o desde «Eliminar mi cuenta» en tu perfil.',
+    p: `Podés solicitar acceso, rectificación, actualización o supresión de tus datos escribiendo a ${company.supportEmail}, desde «Ayuda y soporte» o desde «Eliminar mi cuenta» en tu perfil. La Agencia de Acceso a la Información Pública es el órgano de control de la Ley 25.326.`,
+  },
+  {
+    h: '7. Cookies y almacenamiento local',
+    p: 'Usamos almacenamiento necesario para mantener tu sesión, recordar tu ciudad y guardar tus preferencias. Las cookies de analítica o marketing solo se activan si las aceptás en el aviso de cookies, y podés cambiar tu decisión en cualquier momento desde «Preferencias de cookies» al pie de la app.',
   },
 ];
 
@@ -78,6 +88,10 @@ export default function Legal() {
             <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">{section.p}</p>
           </section>
         ))}
+        <section className="rounded-2xl bg-card p-4 ring-1 ring-border/60">
+          <h2 className="font-heading text-[14px] font-bold text-foreground">Contacto</h2>
+          <ContactDetails className="mt-3" subject={isPrivacy ? 'Datos personales' : 'Consulta sobre términos'} />
+        </section>
         <p className="rounded-2xl bg-secondary/60 p-3 text-[10px] leading-relaxed text-secondary-foreground">
           Este documento describe el funcionamiento del servicio. Para consultas específicas sobre tu
           compra, escribinos desde «Ayuda y soporte».

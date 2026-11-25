@@ -1,7 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Loader2 } from 'lucide-react';
 import { supabase } from '../../services/supabaseClient';
 import CitySelect from '../../components/CitySelect';
+import LocationPicker from '../../components/LocationPicker';
+import { checkBusinessLocation } from '../../lib/geocoding';
 import MercadoPagoConnect from '../../components/merchant/MercadoPagoConnect';
 import MerchantPickups from '../../components/merchant/MerchantPickups';
 import { todayAR, toArgISO, isoToArgParts } from '../../lib/argTime';
@@ -87,19 +90,24 @@ export default function MerchantDashboard() {
     [navigate]
   );
 
-  // Recarga manual (después de guardar, publicar o al tocar "Reintentar")
+  // Recarga manual (después de guardar, publicar o al tocar "Reintentar").
+  // No usa `loading` (que reemplaza todo el panel): el contenido queda visible y solo
+  // el botón que la disparó muestra el progreso.
+  const [refreshing, setRefreshing] = useState(false);
   const fetchBusinessAndOffers = useCallback(async () => {
-    setLoading(true);
-    setLoadError(false);
+    setRefreshing(true);
     try {
       applyDashboard(await fetchDashboard());
+      setLoadError(false);
     } catch (err) {
       console.error('Error al cargar el panel de comercio:', err.message);
       setLoadError(true);
     } finally {
-      setLoading(false);
+      setRefreshing(false);
     }
   }, [applyDashboard]);
+
+  const [creatingOffer, setCreatingOffer] = useState(false);
 
   // Carga inicial: el estado solo se toca cuando llega la respuesta (y si sigue montado)
   useEffect(() => {
@@ -120,24 +128,24 @@ export default function MerchantDashboard() {
     };
   }, [applyDashboard]);
 
-  const captureLocation = () => {
-    if (!navigator.geolocation) {
-      alert('Tu navegador no permite geolocalización.');
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setLat(pos.coords.latitude);
-        setLng(pos.coords.longitude);
-      },
-      () => alert('No pudimos obtener la ubicación. Revisá el permiso del navegador.'),
-      { enableHighAccuracy: true, timeout: 15000 }
-    );
-  };
-
   const handleUpdateProfile = async (e) => {
     e.preventDefault();
     if (!business) return;
+
+    // La ubicación se valida contra la ciudad elegida: evita guardar, por ejemplo, el GPS
+    // de otra localidad o un pin que quedó de una dirección anterior.
+    const location = checkBusinessLocation({ city, lat, lng });
+    if (location.status === 'far') {
+      alert(`El pin del mapa está a ${location.km} km de ${city}. Ubicá tu local en el mapa antes de guardar.`);
+      return;
+    }
+    if (
+      location.status === 'missing' &&
+      !window.confirm('Tu local todavía no tiene ubicación en el mapa, así que no va a aparecer en Explorar. ¿Guardar igual?')
+    ) {
+      return;
+    }
+
     setSavingProfile(true);
     try {
       const { error } = await supabase
@@ -163,6 +171,7 @@ export default function MerchantDashboard() {
 
   const handleCreateOffer = async (e) => {
     e.preventDefault();
+    if (creatingOffer) return; // evita publicar dos veces el mismo pack
     if (!business?.city) {
       alert('Primero guardá la localidad de tu local.');
       return;
@@ -192,6 +201,7 @@ export default function MerchantDashboard() {
       return;
     }
 
+    setCreatingOffer(true);
     try {
       const { error } = await supabase.from('offers').insert([
         {
@@ -216,6 +226,8 @@ export default function MerchantDashboard() {
       fetchBusinessAndOffers();
     } catch (err) {
       alert('Error al crear la oferta: ' + err.message);
+    } finally {
+      setCreatingOffer(false);
     }
   };
 
@@ -258,10 +270,14 @@ export default function MerchantDashboard() {
           <h1 className="text-lg font-bold text-gray-900">No pudimos cargar tu panel</h1>
           <p className="text-sm text-gray-600">Revisá tu conexión e intentá de nuevo.</p>
           <button
+            type="button"
             onClick={fetchBusinessAndOffers}
-            className="px-4 py-2 bg-slate-800 text-white rounded-md text-sm font-medium"
+            disabled={refreshing}
+            aria-busy={refreshing}
+            className="mx-auto flex items-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-md text-sm font-medium disabled:opacity-60"
           >
-            Reintentar
+            {refreshing && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+            {refreshing ? 'Reintentando…' : 'Reintentar'}
           </button>
         </div>
       </div>
@@ -335,17 +351,6 @@ export default function MerchantDashboard() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700">Dirección Comercial</label>
-              <input
-                type="text"
-                required
-                placeholder="Ej. Av. de Mayo 750"
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-                className="mt-1 block w-full border border-gray-300 rounded-md p-2 text-sm"
-              />
-            </div>
-            <div>
               <label className="block text-sm font-medium text-gray-700">Localidad / Zona</label>
               <CitySelect
                 value={city}
@@ -354,21 +359,21 @@ export default function MerchantDashboard() {
               />
             </div>
 
-            <div className="md:col-span-3 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-3 text-sm text-gray-600">
-                <button
-                  type="button"
-                  onClick={captureLocation}
-                  className="px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
-                >
-                  📌 Usar la ubicación de este dispositivo
-                </button>
-                {lat != null && lng != null ? (
-                  <span className="text-green-700">Ubicación del local cargada ✓</span>
-                ) : (
-                  <span>Opcional: ayuda a mostrar qué tan cerca estás de tus clientes. Hacelo desde el local.</span>
-                )}
-              </div>
+            {/* Dirección + mapa con pin arrastrable: fija lat/lng exactos del local */}
+            <div className="md:col-span-3">
+              <LocationPicker
+                address={address}
+                onAddressChange={setAddress}
+                city={city}
+                value={lat != null && lng != null ? { lat, lng } : null}
+                onChange={(next) => {
+                  setLat(next.lat);
+                  setLng(next.lng);
+                }}
+              />
+            </div>
+
+            <div className="md:col-span-3 flex flex-wrap items-center justify-end gap-3">
               <button
                 type="submit"
                 disabled={savingProfile}
@@ -539,9 +544,12 @@ export default function MerchantDashboard() {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md text-sm font-medium shadow-sm"
+                  disabled={creatingOffer}
+                  aria-busy={creatingOffer}
+                  className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md text-sm font-medium shadow-sm disabled:opacity-60"
                 >
-                  Publicar Pack
+                  {creatingOffer && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+                  {creatingOffer ? 'Publicando…' : 'Publicar Pack'}
                 </button>
               </div>
             </form>
